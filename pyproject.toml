@@ -1,0 +1,116 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "persdocbench"
+version = "0.1.0.dev0"
+description = "A reproducible benchmark for Persian document AI: OCR, layout, reading order, tables, parsing and document understanding."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { file = "LICENSE" }
+authors = [{ name = "Shahriar Hooshmand", email = "shahriar.hd@outlook.com" }]
+keywords = ["persian", "ocr", "document-ai", "benchmark", "layout-analysis", "document-understanding"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Natural Language :: Persian",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "pydantic>=2.7",
+  "jsonschema>=4.22",
+  "pyyaml>=6.0",
+  "numpy>=1.26",
+  "pillow>=10.3",
+  "regex>=2024.5.15",
+  "rapidfuzz>=3.9",
+  "pyarrow>=16.1",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# Content generation and dataset IO
+content = [
+  "openai>=1.35",
+  "datasets>=2.20",
+  "jinja2>=3.1",
+  "requests>=2.32",
+]
+# Rendering and capture simulation
+render = [
+  "playwright>=1.45",
+  "lxml>=5.2",
+  "beautifulsoup4>=4.12",
+  "markdown-it-py>=3.0",
+  "openpyxl>=3.1",
+]
+# Stage G/H only. Nothing before the benchmark runner needs torch.
+ml = [
+  "torch>=2.4",
+  "transformers>=4.44",
+  "peft>=0.12",
+  "bitsandbytes>=0.43",
+  "accelerate>=0.32",
+  "mlflow>=2.15",
+  "dvc>=3.51",
+]
+# Dataset Studio
+gui = [
+  "pyside6>=6.7",
+  "pymupdf>=1.24",
+]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+  "pre-commit>=3.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/shahriar-hd/persdocbench"
+Issues = "https://github.com/shahriar-hd/persdocbench/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/persdocbench"]
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+packages = ["persdocbench"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["playwright.*", "pyside6.*", "pymupdf.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "slow: tests that take more than a few seconds",
+  "gpu: requires a CUDA device",
+  "network: requires outbound network access",
+]
+
+[tool.coverage.run]
+source = ["persdocbench"]
+branch = true

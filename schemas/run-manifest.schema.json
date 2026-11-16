@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shahriar-hd/persdocbench/main/schemas/run-manifest.schema.json",
+  "title": "PersDocBench run manifest",
+  "description": "Provenance record for any produced artifact: which code, which config, which model, which data, under which inference condition. Required by the benchmark runner and the training stage so that no result is reported without its conditions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "stage",
+    "created_at",
+    "code",
+    "config",
+    "environment"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "run_id": { "type": "string" },
+    "stage": {
+      "type": "string",
+      "enum": ["content", "rendering", "augmentation", "annotation", "evaluation", "training", "packaging"]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "code": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package_version", "git_commit", "dirty"],
+      "properties": {
+        "package_version": { "type": "string" },
+        "git_commit": { "type": "string" },
+        "git_branch": { "type": ["string", "null"] },
+        "dirty": { "type": "boolean" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "seed": { "type": ["integer", "null"] }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "platform"],
+      "properties": {
+        "python": { "type": "string" },
+        "platform": { "type": "string" },
+        "packages": { "type": "object", "additionalProperties": { "type": "string" } },
+        "cuda": { "type": ["string", "null"] },
+        "device": { "type": ["string", "null"] }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "role": { "type": "string" }
+        }
+      }
+    },
+    "model": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "revision": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "inference_condition": {
+          "type": "string",
+          "enum": ["hosted_api", "local_bf16", "local_fp16", "local_nf4", "quantized_gguf", "other"]
+        },
+        "prompt_id": { "type": ["string", "null"] },
+        "decoding": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "dataset": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] },
+        "split": {
+          "type": ["string", "null"],
+          "enum": ["train", "validation", "test", "test_unseen_templates", "test_unseen_sources", "test_unseen_authors", null]
+        },
+        "n_items": { "type": ["integer", "null"] },
+        "sealed": { "type": "boolean", "default": false }
+      }
+    },
+    "metrics": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "notes": { "type": ["string", "null"] }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shahriar-hd/persdocbench/main/schemas/annotations.schema.json",
+  "title": "PersDocBench Annotations",
+  "type": "object",
+  "required": [
+    "page_id",
+    "coordinate_system",
+    "blocks"
+  ],
+  "properties": {
+    "page_id": {
+      "type": "string"
+    },
+    "coordinate_system": {
+      "const": "pixel_top_left_xy"
+    },
+    "normalization_profile": {
+      "type": "string"
+    },
+    "blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "bbox",
+          "reading_order",
+          "text_raw"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "bbox": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "polygon": {
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "reading_order": {
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "rtl",
+              "ltr",
+              "mixed",
+              "unknown"
+            ]
+          },
+          "text_raw": {
+            "type": "string"
+          },
+          "text_normalized": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "review_status": {
+            "enum": [
+              "unreviewed",
+              "machine_proposed",
+              "human_reviewed",
+              "adjudicated",
+              "rejected"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "relations": {
+      "type": "array"
+    },
+    "tables": {
+      "type": "array"
+    },
+    "figures": {
+      "type": "array"
+    },
+    "annotation_provenance": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

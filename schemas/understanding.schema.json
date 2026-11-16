@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shahriar-hd/persdocbench/main/schemas/understanding.schema.json",
+  "title": "PersDocBench Document Understanding QA",
+  "type": "object",
+  "required": [
+    "document_id",
+    "questions"
+  ],
+  "properties": {
+    "document_id": {
+      "type": "string"
+    },
+    "entities": {
+      "type": "array"
+    },
+    "relations": {
+      "type": "array"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "question_id",
+          "question",
+          "answer",
+          "answerable",
+          "evidence_ids",
+          "task",
+          "difficulty",
+          "review_status"
+        ],
+        "properties": {
+          "question_id": {
+            "type": "string"
+          },
+          "page_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question": {
+            "type": "string"
+          },
+          "answer": {},
+          "answer_type": {
+            "type": "string"
+          },
+          "answerable": {
+            "type": "boolean"
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "task": {
+            "type": "string"
+          },
+          "reasoning_type": {
+            "type": "string"
+          },
+          "difficulty": {
+            "enum": [
+              "easy",
+              "medium",
+              "hard",
+              "very_hard",
+              "expert"
+            ]
+          },
+          "acceptable_variants": {
+            "type": "array"
+          },
+          "review_status": {
+            "enum": [
+              "unreviewed",
+              "machine_proposed",
+              "human_reviewed",
+              "adjudicated",
+              "rejected"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

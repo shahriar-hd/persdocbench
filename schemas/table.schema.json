@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/shahriar-hd/persdocbench/main/schemas/table.schema.json",
+  "title": "PersDocBench table structure annotation",
+  "description": "Grid-structure ground truth for one table: cells with span geometry, header rows/columns, and the source block it derives from. Designed to carry what the legacy project could not express (rowspan/colspan).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "page_id", "table_id", "block_id", "n_rows", "n_cols", "cells"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "page_id": { "type": "string" },
+    "table_id": { "type": "string" },
+    "block_id": {
+      "type": "string",
+      "description": "references annotations.schema.json blocks[].id"
+    },
+    "n_rows": { "type": "integer", "minimum": 1 },
+    "n_cols": { "type": "integer", "minimum": 1 },
+    "header_rows": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "description": "0-indexed row indices forming the header"
+    },
+    "header_cols": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 }
+    },
+    "caption_text": { "type": ["string", "null"] },
+    "cells": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "row", "col", "rowspan", "colspan", "bbox", "text_raw"],
+        "properties": {
+          "id": { "type": "string" },
+          "row": { "type": "integer", "minimum": 0 },
+          "col": { "type": "integer", "minimum": 0 },
+          "rowspan": { "type": "integer", "minimum": 1, "default": 1 },
+          "colspan": { "type": "integer", "minimum": 1, "default": 1 },
+          "bbox": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "[x0, y0, x1, y1] in pixel_top_left_xy"
+          },
+          "text_raw": { "type": "string" },
+          "text_normalized": { "type": ["string", "null"] },
+          "is_header": { "type": "boolean", "default": false },
+          "align": {
+            "type": ["string", "null"],
+            "enum": ["start", "center", "end", "justify", null]
+          },
+          "uncertain": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "coordinate_system": {
+      "type": "string",
+      "const": "pixel_top_left_xy_absolute_to_page"
+    },
+    "reading_order": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "cell ids in the order a human would read them"
+    },
+    "annotation_source": {
+      "type": "string",
+      "enum": ["dom_harvest", "model_preannotation", "human", "adjudicated"]
+    }
+  }
+}
