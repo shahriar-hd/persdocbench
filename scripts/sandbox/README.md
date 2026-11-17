@@ -32,7 +32,7 @@ by policy".
 
 ```bash
 ./scripts/sandbox/pi-sandboxed.sh                # start Pi, sandboxed
-./scripts/sandbox/pi-sandboxed.sh bash -c 'ls'   # run one command, sandboxed
+./scripts/sandbox/pi-sandboxed.sh -- ls -a       # run one command, sandboxed
 ```
 
 ## Credentials

@@ -20,7 +20,7 @@
 #
 # Usage:
 #   ./scripts/sandbox/pi-sandboxed.sh              # start Pi sandboxed
-#   ./scripts/sandbox/pi-sandboxed.sh bash -lc ls  # run a command sandboxed
+#   ./scripts/sandbox/pi-sandboxed.sh -- ls -a     # run a command sandboxed
 #   PI_SANDBOX_ALLOW_SSH=1 ./...                   # also expose ~/.ssh (git push)
 # =============================================================================
 set -euo pipefail
@@ -129,7 +129,11 @@ while IFS= read -r name; do
 done < <(compgen -A variable NVIDIA_API_KEY_ || true)
 
 # --- Exec ------------------------------------------------------------------
-if [[ $# -gt 0 ]]; then
-  exec bwrap "${args[@]}" "$@"
+# A `--` separator is required: without a positional command bwrap parses
+# anything starting with `--` as its OWN option (so `pi --version` would print
+# bubblewrap's version instead).
+if [[ "${1:-}" == "--" ]]; then
+  shift
+  exec bwrap "${args[@]}" -- "$@"
 fi
-exec bwrap "${args[@]}" "$HOME_DIR/.pi/agent/bin/pi"
+exec bwrap "${args[@]}" -- "$HOME_DIR/.pi/agent/bin/pi" "$@"
