@@ -13,8 +13,13 @@ Conventions:
 
 | Profile | Status | Notes |
 |---|---|---|
+| `generation_v1.yaml` | **draft** (Gate 3 input) | provider/key policy, dispatch rhythm, retry taxonomy, normalisation contract, storage layout, run-manifest fields, hosting limits per batch size |
 | `register_v1.yaml` | **draft** (Gate 3 input) | `subject_field` axis (7 fields), `register` axis (4 tiers), banned lay patterns (hard gate), acceptance checks R1–R6, per-domain register contracts, calibration plan |
 
 Human-readable twin: `docs/dataset/content_register_spec_v1.md`.
 Cross-checked against the benchmark profile by `scripts/validate_benchmark_config.py`
 (domain set must match, all share axes must sum to 1.0, `R2_banned_patterns.max` must be 0).
+
+`generation_v1.yaml` is consumed by `src/persdocbench/content/` (key pool, token bucket,
+ledger, dispatcher). Its `provider.model` is intentionally `null` — a run must name its
+model, and no default is inferred.

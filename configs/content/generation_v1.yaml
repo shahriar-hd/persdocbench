@@ -1,0 +1,132 @@
+# PersDocBench content-generation run profile v1.0-draft
+#
+# Gate-3 INPUT. Nothing here authorises generation: it fixes the parameters a
+# generation run must declare, so that cost, throttle time and resumption are
+# auditable after the fact.
+#
+# Twin document: docs/dataset/content_generation_pipeline_v1.md
+# Content gates it references: configs/content/register_v1.yaml
+
+version: "1.0-draft"
+status: draft
+approved: false
+
+provider:
+  kind: openai_compatible
+  base_url: "https://integrate.api.nvidia.com/v1"
+  key_env: NVIDIA_API_KEY          # comma-separated: "nv_key1,nv_key2,..."
+  model: null                      # MUST be set explicitly per run; no default
+  model_revision: null             # provider-reported version, recorded not guessed
+  # What we know about the free tier: ~60 requests/minute per key. The number is
+  # operator-stated, not contractual; the ledger records actual 429s so the
+  # effective rate is measured, not assumed.
+  requests_per_minute_per_key: 60
+  burst_per_key: 4
+  max_concurrent_keys_hint: 4
+
+dispatch:
+  concurrency: 48                  # in-flight requests; rate, not concurrency, binds
+  max_attempts: 5
+  backoff_base: 2.0
+  backoff_cap: 120.0
+  retry_on: [429, 408, 500, 502, 503, 504, timeout, truncated_body]
+  fatal_on: [400, 401, 403, 404, 422]
+  quarantine_key_on: [401, 403]
+  cooldown_on_429_seconds: 60
+  shard_size: 500                  # requests per output shard file
+  stagger_seconds: 0.25            # spread key warm-up, avoids simultaneous bursts
+
+generation:
+  prompt_template: configs/content/prompts_v1.yaml   # written at Gate 3 start
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 1400
+  n_per_prompt: 1
+  # Variation control: the same (domain, subject_field, register) cell must not
+  # produce near-duplicate pages; dedup runs before acceptance, not after.
+  dedup:
+    minhash_shingles: 5
+    minhash_jaccard_reject: 0.85
+
+gates:
+  # hard failures (regenerate, recorded as rejected)
+  hard:
+    - empty_output
+    - banned_lay_pattern
+    - assistant_echo
+    - too_short
+  # soft signals (route to human review, never auto-reject)
+  soft:
+    - low_terminology_density
+    - low_numeric_density
+    - sentence_rhythm_out_of_range
+  thresholds_source: configs/content/register_v1.yaml   # calibrated, not invented
+
+normalization:
+  storage_form: NFC
+  preserve: [zwnj, tatweel, diacritics, persian_digits, arabic_digits, arabic_letter_forms]
+  strip: [control_chars, crlf, trailing_whitespace, triple_newline]
+  never: [zwnj_removal, digit_folding, yeh_kaf_substitution, spelling_correction]
+
+storage:
+  layout:
+    requests: data/interim/gen/{run_id}/requests.jsonl
+    ledger: data/interim/gen/{run_id}/ledger.jsonl
+    outputs: data/interim/gen/{run_id}/shards/shard-{n:04d}.jsonl
+    rejects: data/interim/gen/{run_id}/rejects.jsonl
+    manifest: data/interim/gen/{run_id}/manifest.json
+  append_only: true
+  fsync_each_record: true
+  # Bulk artefacts never live in a database or in a SQLite file.
+  mirror_to_remote: hf_private_dataset        # optional; local copy stays authoritative
+
+run_manifest:
+  required_fields:
+    - run_id
+    - provider_model
+    - provider_model_revision
+    - prompt_template_sha256
+    - register_profile_sha256
+    - key_fingerprints            # sha256[:8] only, never the keys
+    - requests_requested
+    - requests_ok
+    - requests_rejected
+    - requests_failed
+    - requests_skipped_resumed
+    - throttle_seconds_total
+    - tokens_total
+    - started_at
+    - finished_at
+    - host                          # local | gh_actions | vm_oracle | other
+    - github_run_id                 # when host is gh_actions
+
+hosting:
+  # Chosen per batch size; see ADR-001 §8. Cost/quota reasoning, not preference.
+  local:
+    max_requests_per_run: 8000     # ~2 h at 60 req/min/key, safe to interrupt
+  github_actions:
+    max_requests_per_job: 18000    # keeps the job under the 6 h ceiling at 60/min
+    resume_via: ledger_artifact
+  vm_always_free:
+    max_requests_per_job: null     # unbounded; used for >=100k batches
+  cloudflare_queues:
+    enabled: false
+    reason: >-
+      Workers Free Queues include 10,000 operations/day; one message costs a
+      write, a read and a delete, so a 200k batch would span weeks. Cloudflare
+      remains the metadata/API plane, not the message bus.
+
+monitoring:
+  # No always-on service: the ledger is the monitoring surface.
+  fail_if:
+    - ok_rate_below: 0.85
+    - quarantined_keys_above: 0
+    - rejected_rate_above: 0.20
+  report_every_n_requests: 500
+
+compliance_note: >-
+  Multiplying throughput by aggregating several free-tier keys may conflict with
+  the provider's terms of service and with per-account quota policy. This is an
+  operator decision recorded in the run manifest (key_fingerprints), not a
+  technical detail: a single key sustained at the documented rate needs 100
+  minutes for 6,000 requests, which is affordable.
