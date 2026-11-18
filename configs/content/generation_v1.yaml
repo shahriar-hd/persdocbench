@@ -17,6 +17,19 @@ provider:
   key_env: NVIDIA_API_KEY          # comma-separated: "nv_key1,nv_key2,..."
   model: null                      # MUST be set explicitly per run; no default
   model_revision: null             # provider-reported version, recorded not guessed
+  # Ordered fallback, measured on 2026-11-18 (docs/reports/2026-11-18_nvidia_model_probe.md).
+  # Only 2 of 18 probed models answered in every sweep, so a batch pinned to one id
+  # stalls. Fall through on these errors, never on content rejections.
+  model_candidates:
+    - nvidia/nemotron-3.5-bolt-e4b            # 4/4 available, Persian ratio 0.97, 3.7 s median
+    - nvidia/nemotron-3-ultra-550b-a55b       # 4/4 after warm-up, slower
+    - poolside/laguna-xs-2.1                  # fastest Persian-capable, intermittent
+    - google/gemma-4-31b-it                   # different family, intermittent
+    - nvidia/nemotron-3-nano-omni-30b-a3b-reasoning  # needs >= 960 max_tokens
+  fallthrough_on: [ModelForbidden, ModelUnavailable, ModelUnsupported, ParamRejected]
+  never_use:
+    - nvidia/riva-translate-4b-instruct-v2    # answered in English (Persian ratio 0.00)
+    - nvidia/nemotron-3.5-super-vl-120b-a12b  # assistant-echo defect caught by the gate
   # What we know about the free tier: ~60 requests/minute per key. The number is
   # operator-stated, not contractual; the ledger records actual 429s so the
   # effective rate is measured, not assumed.
