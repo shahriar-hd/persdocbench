@@ -11,15 +11,21 @@ approved: false
 
 scope:
   capabilities: [page_ocr, layout, reading_order, table, markdown, vqa]
-  deferred: [formula, chart, entity_kie, classification, handwriting]
+  deferred: [formula, chart, entity_kie, classification]
   primary_language: fa
-  script_styles: [naskh, titr, nastaliq]
+  script_styles: [naskh, titr, nastaliq, handwriting]
+  capture_modes: [render, sim_degraded, print_capture, handwriting_capture]
+  # D12/D31: handwriting is no longer deferred. It enters v1 only as a *capture*
+  # mode over content we authored: a human copies our page text by hand. It is not
+  # a source of real-world documents (those are Gate-4 and licence-gated).
+  handwriting_scope: capture_mode_only
+  decision_refs: [D12, D31, D34]
 
 units:
   content_units_core: 1500
   content_units_parallel_control: 100   # 50 layouts x 2 languages (fa, ar)
   content_units_total: 1600
-  images_total: 6000
+  images_total: 5200          # D4: 4500 render + 400 P2 capture + 300 parallel control
   qa_items: 3000
   split_unit: document            # never page
 
@@ -46,8 +52,11 @@ language_mix:
   persian_arabic_indic_digits: {pages:   30, share: 0.02}
 
 script_style_mix:
-  naskh_titr: 1380
+  # Style of the *artefact*: the 120 hand-executed pages are styled by a human hand
+  # in P2 and are rendered in naskh in P0/P1a/P1b, so they are counted once here.
+  naskh_titr: 1260
   nastaliq:    120      # cap 8%: literary 90 + educational 30
+  handwriting_executed: 120   # D12/D34
 
 layout_families:
   - {id: single_column_letter, pages: 250, columns: 1}
@@ -90,13 +99,22 @@ conditions:
   P2:
     name: real_capture
     construction: print_then_camera
-    pages_core: 600
-    chains: [P2_flat, P2_oblique]
-    images: 1200
+    pages_core: 300              # D4: the user set the first step to 300 physical pages
+    chains:
+      - {id: P2_flat,    pages: 300}
+      - {id: P2_oblique, pages: 100, note: "subset of the flat pages re-photographed obliquely"}
+    images: 400
     acquisition_path: print_capture
     content_origin: synthetic_native
-    domain_quota_per_domain: 60
+    domain_quota_per_domain: 30
     difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}
+    subtracks:                   # D4/D12: the 300 pages are split across two executions
+      printed_capture: 180       # printed on paper, then photographed
+      handwriting_executed: 120  # copied by hand by a named writer, then photographed
+    legibility_triage: true      # reject/rescue decision per capture, recorded
+    scaling_note: >
+      300 pages is the approved first step, not the ceiling: the spec keeps the
+      600-page design on file so a later expansion is a parameter change, not a redesign.
 
 parallel_control:
   units: 100
@@ -126,7 +144,45 @@ ood_strata:
   ood_font:        0.05
   ood_domain:      0.05
 
+rendering:
+  font_inventory: configs/content/fonts_v1.yaml
+  families_min: 30               # D30: user requires ~30 Persian families
+  handwriting_like_min: 4        # D30
+  weights_per_family_min: 4      # regular, medium, bold, light
+  nastaliq_page_share_cap: 0.08
+  licence_verified_required: true
+  redistribute_font_files: false
+  decision_refs: [D3, D30]
+
+handwriting_capture:             # D12/D34
+  page_source: rendered_template # we author the page style and its text first
+  writers_min: 8
+  writer_id_scheme: "w<NN>"      # unique id per person, never a name, recorded per page
+  metadata_per_page: [writer_id, hand, pen, paper, template_id, copied_text_id,
+                      capture_device, capture_dpi, lighting]
+  fidelity_check: required       # writer output is checked against the template
+  description_must_say: "hand-written execution of synthetic content"
+  never_describe_as: real_documents
+  anonymisation: writer ids are pseudonymous and the mapping is not published
+
+sealed_test:                     # D6
+  images_published: false
+  text_gt_published: false       # labels leak as easily as images
+  scoring_service: true
+  submission_format: predictions_json
+  scoring_budget_per_model: 1
+  log_all_evaluations: true
+  rationale: >
+    Test images plus labels are trainable. A benchmark whose test split is downloadable
+    measures memorisation as much as capability, so the sealed split is scored by us and
+    released only as numbers.
+
 annotation:
+  page_pass:                    # D32: user reviews every page, ~20 s each
+    scope: all_headline_images
+    images: 4900                # 4500 render + 400 P2; parallel control counted separately
+    seconds_per_image: 20
+    reviewer: user
   coverage:
     page_metadata: 1.0
     layout: 1.0
@@ -137,16 +193,34 @@ annotation:
     line_word_boxes: 500   # pages
     vqa: 3000              # items
     entity_kie: 0
-  human_verification_rate:
-    layout: 0.20
-    text: 0.20
-    reading_order: 0.20
-    tables: 0.30
-    markdown: 0.20
-    line_word_boxes: 0.10
+  human_verification_rate:      # D32: 100 % of pages pass a human eye
+    layout: 1.00
+    text: 1.00
+    reading_order: 1.00
+    tables: 1.00
+    markdown: 1.00
+    line_word_boxes: 0.10       # box-level GT stays sampled
     vqa: 1.00
   double_annotation_pages: 150
-  effort_hours_estimate: 229
+  # Machine-computed by scripts/validate_benchmark_config.py: hours = count*seconds/3600.
+  # The 20 s/page pass checks rendering integrity and reading order; it is NOT a
+  # word-level text verification, which for rendered pages is unnecessary because the
+  # text is known by construction. Handwriting is the exception (see handwriting_fidelity).
+  effort:
+    - {task: source_screening,      count: 1500, seconds_each: 120}
+    - {task: render_page_pass,      count: 4500, seconds_each: 20}
+    - {task: p2_page_pass,          count: 300,  seconds_each: 20}
+    - {task: parallel_control_pass, count: 300,  seconds_each: 20}
+    - {task: handwriting_fidelity,  count: 120,  seconds_each: 480}
+    - {task: table_verification,    count: 120,  seconds_each: 360}
+    - {task: vqa_authoring,         count: 3000, seconds_each: 90}
+    - {task: vqa_review,            count: 3000, seconds_each: 60}
+    - {task: double_annotation,     count: 150,  seconds_each: 480}
+  effort_hours_estimate: 251
+  effort_hours_second_annotator: 25
+  effort_note: >
+    251 h, up from the 229 h drafted at Gate 2, because the user chose a 100 % page pass
+    instead of a 20 % sample (D10 -> D32). The increase is recorded, not absorbed.
 
 vqa:
   total: 3000
@@ -169,8 +243,17 @@ provenance:
 
 release:
   code_licence: Apache-2.0
-  dataset_licence_proposed: CC-BY-4.0
+  dataset_licence_proposed: CC-BY-NC-4.0      # D33: user preference, non-commercial
+  dataset_licence_alternative: CC-BY-4.0      # for the open-science route
+  commercial_licence: on_request              # dual licensing, decided by the author
+  licence_rationale: >
+    CC-BY-NC-4.0 keeps for-profit reuse (including commercial model training) behind a
+    request, while academic use stays permitted. It also stops industry evaluation of
+    our own numbers, which is the cost of the choice, and it is a licence on our data,
+    not on anyone's model: calling the API of a closed model does not transfer rights.
   sealed_set_access: gated
+  sealed_set_not_a_licence_issue: >
+    the sealed split is withheld, not licensed; its access terms are ours to set.
   redistribute_third_party: false
 
 privacy:

@@ -122,6 +122,59 @@ def validate_register(cfg: dict) -> dict:
     return {"cells": cells, "calibration": cal["status"]}
 
 
+def validate_fonts(cfg: dict) -> dict:
+    """Cross-check configs/content/fonts_v1.yaml against the rendering requirements.
+
+    D3/D30 asks for ~30 Persian families and handwriting-like styles. A requirement
+    that lives only in prose is not a requirement, so the inventory is counted here
+    and the declared counts in the inventory file are verified against its own lists.
+    """
+    path = ROOT / "configs" / "content" / "fonts_v1.yaml"
+    if not path.is_file():
+        check(False, f"missing {path.relative_to(ROOT)}")
+        return {"families": 0, "handwriting_like": 0, "verified_on": "n/a"}
+    fonts = yaml.safe_load(path.read_text(encoding="utf-8"))
+    groups = fonts.get("families") or {}
+    counts = fonts.get("counts") or {}
+    render = cfg.get("rendering") or {}
+
+    real: dict[str, int] = {g: len(rows or []) for g, rows in groups.items()}
+    for group, n in real.items():
+        check(counts.get(group) == n,
+              f"fonts_v1.counts.{group} = {counts.get(group)} but the list has {n}")
+    total = sum(real.values())
+    check(counts.get("total") == total,
+          f"fonts_v1.counts.total = {counts.get('total')} but {total} families are listed")
+
+    verified = 0
+    for group, rows in groups.items():
+        for entry in rows or []:
+            licence = str(entry.get("licence", ""))
+            status = str(entry.get("status", ""))
+            if not licence or licence == "None":
+                check(False, f"font {entry.get('id')} has no licence field")
+            elif licence != "unverified" and "excluded" not in status:
+                verified += 1
+    check(counts.get("licence_verified") == verified,
+          f"fonts_v1.counts.licence_verified = {counts.get('licence_verified')} "
+          f"but {verified} entries carry a verified licence")
+
+    n_families = total
+    hw = real.get("handwriting_like", 0)
+    check(n_families >= render.get("families_min", 0),
+          f"font families {n_families} < required {render.get('families_min')}")
+    check(hw >= render.get("handwriting_like_min", 0),
+          f"handwriting-like families {hw} < required "
+          f"{render.get('handwriting_like_min')}")
+    check(render.get("nastaliq_page_share_cap") == fonts["policy"]["nastaliq_page_share_cap"],
+          "rendering.nastaliq_page_share_cap != fonts_v1.policy.nastaliq_page_share_cap")
+    check(render.get("licence_verified_required") is True
+          and fonts["policy"].get("output_images_carry_font_licence") is False,
+          "font licence policy must require verification and disclaim output-image terms")
+    return {"families": n_families, "handwriting_like": hw,
+            "verified_on": fonts.get("verified_on", "n/a")}
+
+
 def main(check_only: bool = False) -> int:
     cfg = yaml.safe_load(CFG.read_text(encoding="utf-8"))
     core = cfg["units"]["content_units_core"]
@@ -179,13 +232,32 @@ def main(check_only: bool = False) -> int:
         pc_images += c["images"]
 
     p2 = cond["P2"]
-    check(p2["pages_core"] * len(p2["chains"]) == p2["images"],
-          f"P2: images {p2['images']} != pages*chains "
-          f"{p2['pages_core'] * len(p2['chains'])}")
+    p2_images = sum(c["pages"] for c in p2["chains"])
+    check(p2_images == p2["images"],
+          f"P2: images {p2['images']} != sum of chain pages {p2_images}")
+    for c in p2["chains"]:
+        check(c["pages"] <= p2["pages_core"],
+              f"P2 chain {c['id']}: {c['pages']} pages exceeds the "
+              f"{p2['pages_core']} captured pages")
+    check(any(c["pages"] == p2["pages_core"] for c in p2["chains"]),
+          "P2: no chain captures the full page set")
     check(p2["domain_quota_per_domain"] * len(domains) == p2["pages_core"],
           f"P2: quota {p2['domain_quota_per_domain']} x {len(domains)} != "
           f"{p2['pages_core']} pages")
     check(p2["pages_core"] <= core, "P2 pages exceed core page budget")
+    sub = p2.get("subtracks") or {}
+    check(sum(sub.values()) == p2["pages_core"],
+          f"P2 subtracks {sum(sub.values())} != pages_core {p2['pages_core']}")
+    hw = sub.get("handwriting_executed", 0)
+    check(hw == cfg["script_style_mix"].get("handwriting_executed"),
+          "P2 handwritten pages != script_style_mix.handwriting_executed "
+          f"({hw} vs {cfg['script_style_mix'].get('handwriting_executed')})")
+    check(hw > 0, "handwriting capture approved (D12) but no handwritten pages configured")
+    for c in p2["chains"]:
+        per_domain = round(c["pages"] / len(domains))
+        check(per_domain * len(domains) == c["pages"],
+              f"P2 chain {c['id']}: {c['pages']} pages do not divide evenly over "
+              f"{len(domains)} domains; the count matrix would misallocate images")
 
     parallel = cfg["parallel_control"]
     check(parallel["units"] * len(parallel["conditions"]) == parallel["images"],
@@ -226,6 +298,40 @@ def main(check_only: bool = False) -> int:
         check(0.0 < v <= 1.0, f"human_verification_rate.{k} out of range: {v}")
     check(ann["coverage"]["entity_kie"] == 0, "entity_kie must be deferred in v1")
 
+    # ---- annotation effort is computed, not asserted ----------------------
+    hours = sum(e["count"] * e["seconds_each"] for e in ann["effort"]) / 3600.0
+    check(abs(hours - ann["effort_hours_estimate"]) <= 1.0,
+          f"annotation effort {hours:.1f} h != declared {ann['effort_hours_estimate']} h")
+    images_for_pass = sum(cond[c]["images"] for c in ("P0", "P1a", "P1b")) + p2["images"]
+    check(ann["page_pass"]["images"] == images_for_pass,
+          f"page_pass images {ann['page_pass']['images']} != render+P2 images "
+          f"{images_for_pass}")
+    check(ann["page_pass"]["seconds_per_image"] * ann["page_pass"]["images"] / 3600.0
+          <= hours, "page pass alone exceeds the declared effort budget")
+    hw_pages = p2["subtracks"]["handwriting_executed"]
+    check(any(e["task"] == "handwriting_fidelity" and e["count"] == hw_pages
+              for e in ann["effort"]),
+          "no handwriting fidelity check budgeted for the handwritten pages")
+
+    # ---- sealed test (D6) and licence (D33) -------------------------------
+    sealed = cfg.get("sealed_test") or {}
+    check(sealed.get("images_published") is False
+          and sealed.get("text_gt_published") is False,
+          "sealed_test must withhold images AND text: labels are the leak")
+    check(sealed.get("scoring_budget_per_model") ==
+          cfg["splits"]["leakage_controls"]["sealed_scoring_budget"],
+          "sealed_test.scoring_budget_per_model != splits.leakage_controls."
+          "sealed_scoring_budget")
+    rel = cfg["release"]
+    check(rel["dataset_licence_proposed"] in
+          ("CC-BY-4.0", "CC-BY-NC-4.0", "CC-BY-NC-SA-4.0", "CC0-1.0"),
+          f"unknown dataset licence {rel['dataset_licence_proposed']!r}")
+    check(rel.get("commercial_licence") in ("on_request", "granted", "not_offered"),
+          "release.commercial_licence must state the dual-licensing position")
+
+    # ---- font inventory (D3/D30, cross-config) ---------------------------
+    font_stats = validate_fonts(cfg)
+
     # ---- content register (cross-config consistency) ----------------------
     reg_stats = validate_register(cfg)
 
@@ -241,7 +347,12 @@ def main(check_only: bool = False) -> int:
           f"({core} core + {cfg['units']['content_units_parallel_control']} parallel)")
     print(f"  images        : {total_images}")
     print(f"  vqa items     : {vqa['total']}")
-    print(f"  annotation    : ~{ann['effort_hours_estimate']} h")
+    print(f"  annotation    : ~{ann['effort_hours_estimate']} h "
+          f"(computed {hours:.1f} h, +{ann.get('effort_hours_second_annotator', 0)} h "
+          f"second annotator)")
+    print(f"  fonts         : {font_stats['families']} families "
+          f"({font_stats['handwriting_like']} handwriting-like), "
+          f"licences verified {font_stats['verified_on']}")
     print(f"  register cells: {reg_stats['cells']} (domain x subject_field), "
           f"calibration: {reg_stats['calibration']}")
 
@@ -259,8 +370,16 @@ def main(check_only: bool = False) -> int:
         d_pages = d["pages"]
         d_p2 = p2["domain_quota_per_domain"]
         for code in ("P0", "P1a", "P1b", "P2"):
-            pages = d_p2 if code == "P2" else d_pages
-            mult = len(p2["chains"]) if code == "P2" else 1
+            if code == "P2":
+                pages = d_p2
+                # a chain that captures a subset of the pages adds images, not pages;
+                # chains are distributed evenly over domains, which is checked above
+                p2_img = sum(max(1, round(c["pages"] / len(domains)))
+                             for c in p2["chains"])
+                mult = p2_img / d_p2
+            else:
+                pages = d_pages
+                mult = 1
             for cap in caps:
                 # table capability only applies to pages containing tables (est. share)
                 rows.append({
@@ -268,7 +387,7 @@ def main(check_only: bool = False) -> int:
                     "condition": code,
                     "capability": cap,
                     "content_units": pages,
-                    "images": pages * mult,
+                    "images": int(round(pages * mult)),
                     "difficulty_easy": round(pages * d["difficulty"]["easy"]),
                     "difficulty_medium": round(pages * d["difficulty"]["medium"]),
                     "difficulty_hard": round(pages * d["difficulty"]["hard"]),

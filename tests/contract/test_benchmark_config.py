@@ -80,9 +80,67 @@ def test_banking_insurance_and_financial_are_not_renamed(cfg: dict) -> None:
 
 
 def test_deferred_capabilities_stay_out_of_v1(cfg: dict) -> None:
-    assert "handwriting" in cfg["scope"]["deferred"]
     assert "formula" in cfg["scope"]["deferred"]
     assert cfg["annotation"]["coverage"]["entity_kie"] == 0
+
+
+def test_handwriting_is_a_capture_mode_not_a_source(cfg: dict) -> None:
+    """D12: humans copy our text by hand. It must never be described as real documents."""
+    assert "handwriting" in cfg["scope"]["script_styles"]
+    assert "handwriting_capture" in cfg["scope"]["capture_modes"]
+    assert cfg["scope"]["handwriting_scope"] == "capture_mode_only"
+    hw = cfg["handwriting_capture"]
+    assert hw["page_source"] == "rendered_template"
+    assert hw["writers_min"] >= 8
+    assert hw["never_describe_as"] == "real_documents"
+
+
+def test_p2_is_300_pages_with_a_handwritten_subtrack(cfg: dict) -> None:
+    """D4/D12: 300 physical pages, split 180 printed / 120 hand-executed."""
+    p2 = cfg["conditions"]["P2"]
+    assert p2["pages_core"] == 300
+    assert sum(c["pages"] for c in p2["chains"]) == p2["images"] == 400
+    assert p2["subtracks"] == {"printed_capture": 180, "handwriting_executed": 120}
+    assert p2["domain_quota_per_domain"] * 10 == p2["pages_core"]
+
+
+def test_every_page_gets_a_human_pass_but_box_gt_stays_sampled(cfg: dict) -> None:
+    """D32: 100 % page pass at 20 s/page, explicitly not word-level verification."""
+    ann = cfg["annotation"]
+    rates = ann["human_verification_rate"]
+    for key in ("layout", "text", "reading_order", "markdown", "tables", "vqa"):
+        assert rates[key] == 1.00, f"{key} no longer fully reviewed"
+    assert rates["line_word_boxes"] < 1.0
+    assert ann["page_pass"]["seconds_per_image"] == 20
+    assert ann["page_pass"]["images"] == 4900
+
+
+def test_annotation_effort_is_arithmetic_not_assertion(cfg: dict) -> None:
+    """The 251 h figure must be reproducible from the table it is printed with."""
+    ann = cfg["annotation"]
+    hours = sum(e["count"] * e["seconds_each"] for e in ann["effort"]) / 3600.0
+    assert abs(hours - ann["effort_hours_estimate"]) <= 1.0
+    assert ann["effort_hours_estimate"] > 229, "100 % page pass must raise the budget"
+
+
+def test_sealed_split_withholds_images_and_labels(cfg: dict) -> None:
+    """D6: a downloadable test split measures memorisation as much as capability."""
+    sealed = cfg["sealed_test"]
+    assert sealed["images_published"] is False
+    assert sealed["text_gt_published"] is False
+    assert sealed["submission_format"] == "predictions_json"
+    assert sealed["scoring_budget_per_model"] == \
+        cfg["splits"]["leakage_controls"]["sealed_scoring_budget"]
+
+
+def test_dataset_licence_choice_is_recorded_with_its_cost(cfg: dict) -> None:
+    """D33: non-commercial is a choice with a price; the price is written down."""
+    rel = cfg["release"]
+    assert rel["dataset_licence_proposed"] == "CC-BY-NC-4.0"
+    assert rel["commercial_licence"] == "on_request"
+    assert "industry" in rel["licence_rationale"]
+    assert rel["code_licence"] == "Apache-2.0"
+    assert rel["redistribute_third_party"] is False
 
 
 def test_ontology_has_persian_specific_classes(ontology: dict) -> None:
@@ -129,6 +187,44 @@ def test_count_matrix_matches_config() -> None:
             if r["condition"] == cond and r["capability"] == "page_ocr"
         )
         assert pages == core, f"{cond}: matrix covers {pages} pages, config says {core}"
+    p2 = cfg["conditions"]["P2"]
+    p2_units = sum(
+        int(r["content_units"]) for r in rows
+        if r["condition"] == "P2" and r["capability"] == "page_ocr"
+    )
+    assert p2_units == p2["pages_core"], f"P2 matrix covers {p2_units} pages"
+    p2_images = sum(
+        int(r["images"]) for r in rows
+        if r["condition"] == "P2" and r["capability"] == "page_ocr"
+    )
+    assert p2_images == p2["images"], f"P2 matrix covers {p2_images} images"
+
+
+def test_font_inventory_meets_the_30_family_requirement(cfg: dict) -> None:
+    """D3/D30: ~30 Persian families, >= 4 handwriting-like, every licence verified."""
+    fonts = yaml.safe_load((ROOT / "configs" / "content" / "fonts_v1.yaml")
+                           .read_text(encoding="utf-8"))
+    groups = fonts["families"]
+    total = sum(len(v) for v in groups.values())
+    assert total >= cfg["rendering"]["families_min"] >= 30
+    assert len(groups["handwriting_like"]) >= cfg["rendering"]["handwriting_like_min"] >= 4
+    assert fonts["counts"]["total"] == total
+    unverified = [e["id"] for rows in groups.values() for e in rows
+                  if e.get("licence") == "unverified"]
+    assert unverified, "the unverified entry must stay visible, not deleted"
+    assert all(e.get("licence_sha") or e.get("repo") for rows in groups.values()
+               for e in rows), "every family must name its source or its licence sha"
+
+
+def test_proprietary_fonts_are_excluded_not_silently_used(cfg: dict) -> None:
+    """B Nazanin and IRANSansX are the most common Persian fonts and both are blocked."""
+    fonts = yaml.safe_load((ROOT / "configs" / "content" / "fonts_v1.yaml")
+                           .read_text(encoding="utf-8"))
+    pending = " ".join(str(e) for e in fonts["pending_licence_verification"])
+    assert "IRANSansX" in pending
+    assert "Nazanin" in pending
+    assert fonts["policy"]["redistribute_font_files"] is False
+    assert fonts["policy"]["output_images_carry_font_licence"] is False
 
 # --- content register profile (Gate-3 input) --------------------------------
 

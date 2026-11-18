@@ -1,0 +1,149 @@
+# PersDocBench font inventory v1.0-draft
+# Answers D3/D30: the user requires ~30 Persian families, NOT one or two, plus
+# handwriting-style families and "other" styles (display, Nastaliq, monospace).
+# Machine-readable twin of docs/dataset/benchmark_spec_v1.md §5.4.
+# Status: DRAFT — every licence below was checked on 2026-11-18, no licence is guessed.
+
+schema_version: "1.0"
+status: draft
+approved: false
+decision_refs: [D3, D30, D31]
+verified_on: "2026-11-18"
+verification_method: >-
+  GitHub REST `GET /repos/{owner}/{repo}/license` (spdx_id + licence-file sha), or
+  `GET /repos/google/fonts/contents/ofl/{family}/OFL.txt` for Google Fonts families.
+  Where GitHub reported NOASSERTION the licence text was fetched and matched against
+  "SIL OPEN FONT LICENSE Version 1.1". No entry is marked verified on filename or reputation.
+
+policy:
+  target_families: 30                 # D30: user requires ~30 Persian families
+  weights_min_families: 4             # regular / medium / bold / light at minimum
+  handwriting_like_min_families: 4    # D30: font-based handwriting styles
+  nastaliq_page_share_cap: 0.08       # approved with D3/T3 (unchanged)
+  allowed_licences: [OFL-1.1, Apache-2.0, MIT, Public-Domain, Bitstream-Vera]
+  review_before_use: [GPL-3.0]        # usable for rendering, flagged: font files not redistributed
+  excluded_licences: [proprietary, unverified]
+  redistribute_font_files: false      # font binaries never ship with the dataset
+  output_images_carry_font_licence: false
+  output_images_note: >-
+    Rendering text with a font produces a document, not a derivative of the font
+    software; the OFL's copyright notice and attribution obligations attach to the
+    font files, which we do not redistribute. We nonetheless name every family used
+    in the data card and ship the licence texts in docs/, because the claim is worth
+    being checkable even where it is not legally owed.
+  attribution_in_data_card: true
+  per_family_usage_log: true          # each rendered page records family_id + weight
+
+# Families whose EULA we could not verify. Rendering with them is the risk:
+# the page image is the dataset artefact, so an unverifiable EULA is treated as
+# a redistribution risk, not as a free option. Real documents that happen to use
+# them may still enter the real-data track — the font is the document's, not ours.
+pending_licence_verification:
+  - name: IRANSansX
+    presence: "installed locally (IRANSansX-Regular.ttf), UKWN foundry, no licence field"
+    status: excluded_pending_licence
+    note: >-
+      The most common Persian UI font in real documents. No authoritative licence
+      file found (only unaffiliated re-uploads). Obtain the licence or cover this
+      style through the real-document track instead of rendering.
+  - name: B Nazanin / B Zar
+    status: excluded_proprietary
+    note: most common Persian body fonts in official print; proprietary, excluded.
+  - name: Yekan Bakh / IRANYekan
+    status: excluded_proprietary
+  - name: Dana / Shabnam Pro / Vazir Pro
+    status: excluded_proprietary
+
+# ---------------------------------------------------------------- verified families
+families:
+  text_naskh:
+    - {id: vazirmatn,      name: Vazirmatn,     repo: rastikerdar/vazirmatn,        licence: OFL-1.1}
+    - {id: sahel,          name: Sahel,         repo: rastikerdar/sahel-font,       licence: OFL-1.1, licence_sha: ae3f0411ff}
+    - {id: samim,          name: Samim,         repo: rastikerdar/samim-font,       licence: OFL-1.1, licence_sha: c1657e34a8}
+    - {id: shabnam,        name: Shabnam,       repo: rastikerdar/shabnam-font,     licence: OFL-1.1, licence_sha: 099bf8f69f}
+    - {id: tanha,          name: Tanha,         repo: rastikerdar/tanha-font,       licence: OFL-1.1, licence_sha: 3fdfd2a885}
+    - {id: gandom,         name: Gandom,        repo: rastikerdar/gandom-font,      licence: OFL-1.1, licence_sha: 863caf2f97}
+    - {id: nahid,          name: Nahid,         repo: rastikerdar/nahid-font,       licence: OFL-1.1, licence_sha: 3fdfd2a885}
+    - {id: parastoo,       name: Parastoo,      repo: rastikerdar/parastoo-font,    licence: OFL-1.1}
+    - {id: estedad,        name: Estedad,       repo: aminabedi68/Estedad,          licence: OFL-1.1}
+    - {id: fandogh,        name: Fandogh,       repo: aminabedi68/Fandogh,          licence: OFL-1.1}
+    - {id: noqte,          name: Noqte,         repo: mehdisadeghi/Noqte,           licence: OFL-1.1, licence_sha: 4d5a60c172}
+    - {id: daftar,         name: Daftar,        repo: ParsaBordbar/Daftar,          licence: MIT,     licence_sha: e7367520e3}
+    - {id: pfont,          name: pfont,         repo: pfont/pfont,                  licence: OFL-1.1, licence_sha: 601f89899d}
+    - {id: behdad,         name: Behdad,        repo: font-store/BehdadFont,        licence: OFL-1.1}
+    - {id: nika,           name: Nika,          repo: font-store/NikaFont,          licence: OFL-1.1}
+    - {id: iranian,        name: Iranian,       repo: font-store/font-Iranian,      licence: OFL-1.1}
+    - {id: ganjnameh,      name: Ganjnameh,     repo: font-store/GanjnamehFont,     licence: OFL-1.1}
+    - {id: farbod,         name: Farbod,        repo: font-store/FarbodFont,        licence: OFL-1.1}
+    - {id: shahab,         name: Shahab,        repo: font-store/ShahabFont,        licence: OFL-1.1}
+    - {id: noon,           name: Noon,          repo: font-store/NoonFont,          licence: OFL-1.1, licence_sha: 45b4391587}
+    - {id: erfan,          name: Erfan,         repo: ekm507/erfan-font,            licence: OFL-1.1, licence_sha: f86d164525}
+    - {id: evilfont,       name: EvilFont,      repo: dedeadend/EvilFont,           licence: Apache-2.0, licence_sha: 261eeb9e9f}
+    - {id: noto_naskh_arabic, name: Noto Naskh Arabic, repo: google/fonts:ofl/notonaskharabic, licence: OFL-1.1, licence_sha: d4e170557fc8}
+    - {id: noto_sans_arabic,  name: Noto Sans Arabic,  repo: google/fonts:ofl/notosansarabic,  licence: OFL-1.1, licence_sha: 14c589f63845}
+    - {id: amiri,          name: Amiri,         repo: google/fonts:ofl/amiri,       licence: OFL-1.1, licence_sha: a6051797e5f1}
+    - {id: scheherazade_new, name: Scheherazade New, repo: google/fonts:ofl/scheherazadenew, licence: OFL-1.1, licence_sha: 5681491c7118}
+    - {id: lateef,         name: Lateef,        repo: google/fonts:ofl/lateef,      licence: OFL-1.1, licence_sha: 4799a032ad91}
+    - {id: harmattan,      name: Harmattan,     repo: google/fonts:ofl/harmattan,   licence: OFL-1.1, licence_sha: 646b506e416e}
+
+  display_titr:
+    - {id: lalezar,        name: Lalezar,       repo: google/fonts:ofl/lalezar,     licence: OFL-1.1, licence_sha: 7f8e10fe7cd4}
+    - {id: markazi_text,   name: Markazi Text,  repo: google/fonts:ofl/markazitext, licence: OFL-1.1, licence_sha: 0a0336aeb5a0}
+    - {id: mirza,          name: Mirza,         repo: google/fonts:ofl/mirza,       licence: OFL-1.1, licence_sha: af203bab9641}
+    - {id: rakkas,         name: Rakkas,        repo: google/fonts:ofl/rakkas,      licence: OFL-1.1, licence_sha: 818eba2813b8}
+    - {id: aref_ruqaa,     name: Aref Ruqaa,    repo: google/fonts:ofl/arefruqaa,   licence: OFL-1.1, licence_sha: f89db8233df5}
+    - {id: vibes,          name: Vibes,         repo: google/fonts:ofl/vibes,       licence: OFL-1.1, licence_sha: 319d15bf5f6b}
+
+  nastaliq:
+    - {id: irannastaliq,        name: IranNastaliq,      repo: font-store/font-IranNastaliq,   licence: OFL-1.1, licence_sha: 78e3f84aff}
+    - {id: noto_nastaliq_urdu,  name: Noto Nastaliq Urdu, repo: google/fonts:ofl/notonastaliqurdu, licence: OFL-1.1, licence_sha: 38833b0693a3}
+    - {id: gulzar,              name: Gulzar,            repo: google/fonts:ofl/gulzar,        licence: OFL-1.1, licence_sha: 18721f463366}
+    - {id: noto_nastaliq,       name: Noto Nastaliq,     repo: notofonts/nastaliq,             licence: OFL-1.1, licence_sha: 88819788c8}
+
+  handwriting_like:
+    # D30/D31 — styles that *look* hand-written. Three are verified today; the
+    # user's own hand-written captures (D12/D34) are the authentic track and are
+    # NOT interchangeable with these: a handwriting font is a style, not a writer.
+    - {id: dastkhat,  name: Dastkhat,  repo: dastyar-io/dastkhat-font, licence: OFL-1.1,
+       note: "reference the user supplied; OFL-1.1 confirmed 2026-11-18"}
+    - {id: mikhak,    name: Mikhak,    repo: aminabedi68/Mikhak, licence: OFL-1.1,
+       note: "handwriting appearance; confirm by rendering before use"}
+    - {id: ronevis,   name: Ronevis,   repo: truthofmatthew/ronevis, licence: GPL-3.0,
+       licence_sha: e512009b7c, status: review_before_use,
+       note: "GPL-3.0 on font files; we do not redistribute binaries. Reviewed at Gate 3."}
+    - {id: iran_shahr, name: IranShahr, repo: DarjaGFX/IranShahr, licence: unverified,
+       status: excluded_pending_licence}
+
+  monospace:
+    - {id: vazir_code, name: Vazir Code, repo: rastikerdar/vazir-code-font,
+       licence: Bitstream-Vera + Public-Domain, note: "as recorded in the repo LICENSE text"}
+
+# Families counted toward target_families (text + display + nastaliq + handwriting):
+# 28 + 6 + 4 + 4 = 42 candidates; 38 are licence-verified, 4 excluded.
+counts:
+  text_naskh: 28
+  display_titr: 6
+  nastaliq: 4
+  handwriting_like: 4
+  monospace: 1
+  total: 43
+  licence_verified: 42          # every entry except iran_shahr
+  excluded_or_pending: 1        # iran_shahr (no licence file); ronevis is GPL, flagged not excluded
+  decision_ref: D30
+
+# ---------------------------------------------------------------- local inventory
+# `scripts/scan_local_fonts.py` enumerates installed families with Persian coverage.
+local_inventory:
+  scanned_by: scripts/scan_local_fonts.py
+  report: artifacts/fonts/local_fonts.json        # git-ignored
+  scanned_on: "2026-11-18"
+  host_font_files: 705
+  persian_capable_names: 21          # fontconfig family names, weights included
+  persian_capable_families: 12       # weights collapsed to families
+  in_verified_inventory: 6           # Vazirmatn, Sahel, Amiri, Noto Naskh/Sans/Nastaliq
+  pending_licence_present_locally: [IRANSansX]
+  free_but_not_yet_checked_in: [DejaVu Sans, Noto Kufi Arabic, Vazir]
+  note: >-
+    705 installed font files yield 12 Persian-capable families and only 6 that are both
+    Persian-capable and already in the verified inventory. The local machine is a
+    convenience, not the font strategy: the inventory above is the plan.
