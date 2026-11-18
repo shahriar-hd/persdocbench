@@ -1,0 +1,156 @@
+# PersDocBench label ontology v1.0-draft
+# Machine-readable twin of docs/dataset/label_ontology_v1.md
+# Status: DRAFT — Gate 2.
+
+schema_version: "1.0"
+
+coordinates:
+  space: original_image_pixels
+  origin: top_left
+  x_axis: right
+  y_axis: down
+  box_format: [x0, y0, x1, y1]      # x1,y1 exclusive
+  polygon: optional
+  reading_direction_default: rtl
+
+ids:
+  page: "p{page_no:04d}"
+  block: "{page_id}-b{ordinal:03d}"
+  line: "{block_id}-l{ordinal:03d}"
+  span: "{line_id}-s{ordinal:02d}"
+  cell: "{table_block_id}-c{row:02d}-{col:02d}"
+  table: "{block_id}"
+  figure: "{block_id}"
+  qa: "q{split}-{seq:05d}"
+  stability_rule: ids are immutable once assigned; re-annotation creates a new revision
+
+# ---------------------------------------------------------------- region classes
+layout_classes:
+  # id: {rtl_note, provenance, v1}
+  title:            {order_hint: 0, note: "document or section main title; Titr weight in Persian"}
+  section_header:   {order_hint: 1}
+  subsection_header:{order_hint: 2}
+  paragraph:        {order_hint: 3}
+  list:             {order_hint: 4, note: "ordered/unordered; Persian bullets are often custom glyphs"}
+  table:            {order_hint: 5}
+  figure:           {order_hint: 6}
+  caption:          {order_hint: 7, note: "may precede or follow its figure/table in Persian typography — bind by annotation, not position"}
+  formula:          {order_hint: 8, v1_scored: false}
+  footnote:         {order_hint: 9, note: "Persian footnotes often use asterisk/numeral sequences, not superscript digits"}
+  header:           {order_hint: -2, exclude_from_reading_order: true}
+  footer:           {order_hint: -1, exclude_from_reading_order: true}
+  page_number:      {order_hint: -1, exclude_from_reading_order: true, note: "may be Persian-Indic, Arabic-Indic or Latin"}
+  marginal_note:    {order_hint: 9, persian_specific: true, note: "حاشیه — pervasive in Persian books and legal documents; absent from DocLayNet/OmniDocBench"}
+  stamp:            {order_hint: 10, persian_specific: true, note: "مهر — often rotated and overlapping body text"}
+  signature:        {order_hint: 10, persian_specific: true, note: "امضا — handwritten ink inside printed page; label the region, not the handwriting as text"}
+  watermark:        {order_hint: 11, exclude_from_reading_order: true}
+  barcode_qr:       {order_hint: 11, exclude_from_reading_order: true}
+
+layout_attributes:
+  bbox_level:
+    - {id: text_direction, values: [rtl, ltr, mixed]}
+    - {id: text_language, values: [fa, en, ar, digit_only, mixed]}
+    - {id: font_style, values: [naskh, titr, nastaliq, latin, monospace, unknown]}
+    - {id: font_weight, values: [normal, bold, light]}
+    - {id: is_handwritten, values: [true, false]}
+    - {id: is_rotated, values: [true, false], note: "stamps and marginalia commonly rotated"}
+    - {id: occlusion, values: [none, stamp_overlap, fold, shadow, other]}
+    - {id: text_alignment, values: [right, left, center, justified]}
+  page_level:
+    - {id: digit_style, values: [persian_indic, arabic_indic, latin, mixed]}
+    - {id: zwnj_density, values: [none, sparse, typical, dense]}
+    - {id: column_count, values: [1, 2, 3, 4]}
+    - {id: has_stamp, values: [true, false]}
+    - {id: has_table, values: [true, false]}
+    - {id: script_style, values: [naskh, titr, nastaliq, mixed]}
+
+# ---------------------------------------------------------------- text fields
+text_fields:
+  text_raw:
+    definition: exact visible characters, no normalisation beyond NFC
+    includes: [zwnj, diacritics, tatweel, bidi_controls]
+  text_norm:
+    definition: L2 of the approved normalisation ladder (docs/research/metric_protocol.md)
+    includes: [nfc, tatweel_removed, yeh_kaf_unified, punctuation_unified]
+    excludes: [zwnj_removal, digit_folding]
+  text_render:
+    definition: the string used to render the page (source of truth for P0)
+  text_line_normalized:
+    definition: L1 per line, with visual line breaks represented as "\n"
+  digits_policy:
+    store: text_raw preserves the digit block actually rendered
+    variants: [persian_indic, arabic_indic, latin]
+
+# ---------------------------------------------------------------- tables
+table_model:
+  representation: [html, otsl_optional]
+  fields:
+    - n_rows
+    - n_cols
+    - header_rows: "list[int]; 0-indexed"
+    - header_cols: "list[int]"
+    - cells: "list[{cell_id, row, col, rowspan, colspan, text_raw, text_norm, is_header, bbox}]"
+    - bbox: page coordinates of the table region
+    - reading_order: "row-major unless rtl_note overrides"
+  rules:
+    - merged cells must carry rowspan/colspan > 1 and the covered coordinates must not be emitted as empty cells
+    - cell text is compared at strict normalisation; a normalised variant is reported separately
+    - numeric cells additionally record numeric_value and unit where present
+
+# ---------------------------------------------------------------- reading order
+reading_order:
+  representation: "explicit integer per block + optional graph edges"
+  excludes: [header, footer, page_number, watermark]
+  rtl_rule: "order flows right-to-left within a line, top-to-bottom across lines; multi-column order is column-major from the rightmost column"
+  exceptions: "captions bind to their figure/table regardless of position; footnotes follow body text"
+
+# ---------------------------------------------------------------- VQA
+vqa_item:
+  required_fields:
+    - qa_id
+    - question              # Persian
+    - question_en           # review only, never scored
+    - answer
+    - answer_type           # string | number | date | entity | choice | boolean
+    - answer_variants       # acceptable alternatives, normalised
+    - answerable            # bool
+    - evidence_ids          # block/table/cell/page ids
+    - reasoning_category    # direct_lookup | table_cell_row_col | cross_block | arithmetic | layout_reading | unanswerable | cross_page
+    - difficulty            # easy | medium | hard
+    - authoring_source      # annotation_derived | template | human_written
+    - reviewer_status       # pending | approved | rejected
+    - split
+  rules:
+    - questions are authored from verified annotations, never from model output
+    - arithmetic items store operand ids and the expected unit
+    - date answers declare calendar (jalali | gregorian)
+    - unanswerable items must reference plausible evidence regions
+
+# ---------------------------------------------------------------- provenance of labels
+annotation_meta:
+  required_fields:
+    - annotator_id
+    - method              # dom_derived | human | human_corrected | model_assisted
+    - timestamp
+    - confidence          # 0..1
+    - review_status       # unreviewed | verified | adjudicated | rejected
+    - revision
+  rules:
+    - model_assisted labels may never be review_status=verified without a human action
+    - prompt_echo_detector must have run before any label is sealed (constraint C4)
+
+# ---------------------------------------------------------------- diagnostic attributes
+diagnostic_attributes:   # labels for failure attribution; never scored
+  - blur
+  - illumination_uneven
+  - skew
+  - ink_bleed
+  - show_through
+  - compression_artifacts
+  - watermark_or_stamp
+  - handwriting_present
+  - table_complexity
+  - multi_column
+  - font_style
+  - digit_form
+  - direction_mixing

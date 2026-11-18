@@ -1,0 +1,339 @@
+# PersDocBench content register profile v1.0-draft
+#
+# Machine-readable twin of docs/dataset/content_register_spec_v1.md
+# Gate-3 INPUT. Nothing here authorises generation; it constrains it.
+#
+# Design: `domain` (document genre, approved Gate 2 / D2) is ORTHOGONAL to
+# `subject_field` (what the text is about, new D13) and to `register` (how expert
+# the prose is, new D14). A medical paper, a medical manual and a medical textbook
+# share a subject_field but differ in genre and register.
+
+version: "1.0-draft"
+status: draft
+approved: false
+
+# ---------------------------------------------------------------------------
+# Axis 2: subject_field — shares sum to 1.0
+# ---------------------------------------------------------------------------
+subject_fields:
+  medicine_biology:
+    share: 0.15
+    host_domains: [academic_paper, educational, technical_manual, book_literary]
+    # seed terminology for the density check (R1). Extend per generated unit;
+    # this list is a floor, not the full lexicon.
+    lexicon_seed:
+      - اپیدمیولوژی
+      - اتیولوژی
+      - پاتوژنز
+      - پاتوفیزیولوژی
+      - تشخیص افتراقی
+      - پروگنوز
+      - شیوع
+      - بروز
+      - حساسیت و ویژگی
+      - کارآزمایی بالینی
+      - درمان نگهدارنده
+      - دوز مصرفی
+      - عود
+      - بافت‌شناسی
+    numeric_policy: heavy
+
+  engineering_technical:
+    share: 0.20
+    host_domains: [technical_manual, academic_paper, educational]
+    lexicon_seed:
+      - مشخصات فنی
+      - تحمل خطا
+      - کالیبراسیون
+      - بار نامی
+      - بازده
+      - اصطکاک
+      - گشتاور
+      - فشار مجاز
+      - دمای کاری
+      - نگهداری پیشگیرانه
+      - عیب‌یابی
+      - استاندارد
+      - لحظه خمشی
+      - افت فشار
+    numeric_policy: heavy
+
+  finance_economics:
+    share: 0.20
+    host_domains: [banking_insurance, financial_invoice, news_web, academic_paper]
+    lexicon_seed:
+      - مانده حساب
+      - بستانکار
+      - بدهکار
+      - سررسید
+      - نرخ سود
+      - تورم
+      - نقدینگی
+      - ترازنامه
+      - جریان نقدی
+      - ریسک اعتباری
+      - ذخیره مطالبات
+      - بهره مرکب
+      - ارزش افزوده
+      - بازده سرمایه
+    numeric_policy: heavy
+
+  law_policy:
+    share: 0.12
+    host_domains: [legal_contract, administrative_letter, form_government]
+    lexicon_seed:
+      - طرفین قرارداد
+      - تعهدات
+      - وجه التزام
+      - فسخ
+      - مرجع صالح
+      - محرمانگی
+      - الحاقیه
+      - شرایط عمومی
+      - اخطار کتبی
+      - خسارت
+      - آیین‌نامه
+      - صلاحیت
+      - تبصره
+      - حق رجوع
+    numeric_policy: moderate
+
+  education_social:
+    share: 0.12
+    host_domains: [educational, administrative_letter, news_web]
+    lexicon_seed:
+      - سرفصل
+      - پیش‌نیاز
+      - ارزشیابی
+      - بارم
+      - واحد درسی
+      - مهارت هدف
+      - خودارزیابی
+      - پاسخ تشریحی
+      - تکلیف
+      - رتبه علمی
+      - ثبت‌نام
+      - برنامه درسی
+      - میانگین نمرات
+      - بازخورد سازنده
+    numeric_policy: moderate
+
+  literature_culture:
+    share: 0.11
+    host_domains: [book_literary, news_web]
+    lexicon_seed:
+      - روایت
+      - پیرنگ
+      - شخصیت‌پردازی
+      - راوی
+      - لحن
+      - استعاره
+      - فضاسازی
+      - درون‌مایه
+      - توصیف
+      - وزن عروضی
+      - قافیه
+      - تصویرسازی
+      - گفت‌وگو
+      - زاویه دید
+    numeric_policy: light
+    note: poetry pages carry no numerals by genre; the numeric check is waived there.
+
+  general_administration:
+    share: 0.10
+    host_domains: [administrative_letter, form_government]
+    lexicon_seed:
+      - ارجاع
+      - مرقوم
+      - دستور اداری
+      - بایگانی
+      - رونوشت
+      - عطف به
+      - متمم
+      - واحد سازمانی
+      - سمت
+      - کد پیگیری
+      - احراز هویت
+      - ضوابط
+      - بارگذاری مدارک
+      - امضای مجاز
+    numeric_policy: light
+
+# ---------------------------------------------------------------------------
+# Axis 3: register — shares sum to 1.0 over core content units
+# `lay_explainer` is deliberately absent: it is a defect, not a tier.
+# ---------------------------------------------------------------------------
+registers:
+  expert_to_expert:
+    share: 0.60
+    reader_assumes: professional in the same field
+    defines_terms: never
+    examples: [journal body text, engineering report, medical report, legal clause]
+  professional_operational:
+    share: 0.25
+    reader_assumes: trained operator
+    defines_terms: never
+    examples: [invoice line items, form labels, bank statement notes, equipment procedure]
+  pedagogical_expert:
+    share: 0.12
+    reader_assumes: student of the field
+    defines_terms: once, densely
+    examples: [textbook section, exam question, technical primer]
+  public_facing_formal:
+    share: 0.03
+    reader_assumes: informed non-specialist
+    defines_terms: allowed
+    examples: [published regulation, consumer policy summary, press release]
+    must_be_labelled: true
+
+# ---------------------------------------------------------------------------
+# Generation defects — deterministic hard failures (D15).
+# A hit means regenerate; it is never a "score".
+# ---------------------------------------------------------------------------
+banned_patterns:
+  fa:
+    - به زبان ساده
+    - به زبان عامیانه
+    - به طور کلی
+    - در دنیای امروز
+    - امروزه شاهد
+    - همان‌طور که می‌دانید
+    - همانطور که میدانید
+    - برای درک بهتر
+    - تصور کنید
+    - اهمیت زیادی دارد
+    - نقش مهمی ایفا می‌کند
+    - به یاد داشته باشید
+    - در این مقاله می‌خوانید
+    - بیایید
+    - در پایان روز
+    - نقش کلیدی
+    - دنیای پیچیده
+  en:
+    - in today's world
+    - in simple terms
+    - let's
+    - imagine
+    - as we all know
+    - it is important to note
+    - plays a key role
+    - at the end of the day
+  # Elementary terms must never be *defined* in expert_to_expert register.
+  # Matched as "TERM + definition copula" rather than banning the term itself.
+  definition_copulas_fa: ["عبارت است از", "به معنای", "یعنی", "تعریف می‌شود به"]
+
+# ---------------------------------------------------------------------------
+# Acceptance checks R1..R6 (see spec §3). Thresholds are PROPOSALS, to be
+# replaced by the calibration pilot (D16) set at the 25th percentile of
+# human-accepted samples. Do not quote as validated until then.
+# ---------------------------------------------------------------------------
+checks:
+  R1_terminology_density:
+    metric: distinct_lexicon_terms_per_200_words
+    min:
+      expert_to_expert: 8
+      professional_operational: 4
+      pedagogical_expert: 6
+      public_facing_formal: 3
+  R2_banned_patterns:
+    metric: hit_count
+    max: 0          # hard fail
+  R3_numeric_density:
+    metric: number_with_unit_per_80_words
+    min_by_policy:
+      heavy: 1
+      moderate: 0.5
+      light: 0
+    waiver_genres: [poetry]
+  R4_structural_elements:
+    metric: required_elements_present
+    mode: all_required
+  R5_complexity:
+    metric: mean_words_per_sentence
+    min: 18
+    max: 32
+    note: measure over the body text only, excluding headings and table cells
+  R6_hedging:
+    metric: hedge_or_qualifier_per_120_words
+    min: 1
+    registers: [expert_to_expert, pedagogical_expert]
+
+# ---------------------------------------------------------------------------
+# Per-domain register contract (spec §5)
+# ---------------------------------------------------------------------------
+domains:
+  administrative_letter:
+    register_mix: {expert_to_expert: 0.20, professional_operational: 0.70, public_facing_formal: 0.10}
+    required_elements: [reference_line, body_paragraphs, closing, signatory_block]
+    numeric_policy: light
+  form_government:
+    register_mix: {professional_operational: 0.90, public_facing_formal: 0.10}
+    required_elements: [field_labels, required_markers, instructions, tracking_code]
+    numeric_policy: light
+  banking_insurance:
+    register_mix: {expert_to_expert: 0.30, professional_operational: 0.60, public_facing_formal: 0.10}
+    required_elements: [account_block, transaction_table, notes, totals]
+    numeric_policy: heavy
+  financial_invoice:
+    register_mix: {professional_operational: 0.95, public_facing_formal: 0.05}
+    required_elements: [issuer_buyer_block, line_items, tax_rows, totals]
+    numeric_policy: heavy
+  academic_paper:
+    register_mix: {expert_to_expert: 0.70, pedagogical_expert: 0.30}
+    required_elements: [abstract, keywords, method, results, discussion, limitations]
+    numeric_policy: heavy
+  educational:
+    register_mix: {pedagogical_expert: 0.80, expert_to_expert: 0.20}
+    required_elements: [objective, explanation, exercise_or_example]
+    numeric_policy: moderate
+  legal_contract:
+    register_mix: {expert_to_expert: 0.80, public_facing_formal: 0.20}
+    required_elements: [parties, definitions, numbered_obligations, termination, dispute_clause]
+    numeric_policy: moderate
+  book_literary:
+    register_mix: {expert_to_expert: 0.60, pedagogical_expert: 0.40}
+    required_elements: [running_text, chapter_markers]
+    numeric_policy: light
+  news_web:
+    register_mix: {expert_to_expert: 0.40, professional_operational: 0.40, public_facing_formal: 0.20}
+    required_elements: [headline, lead, body, attribution, dateline]
+    numeric_policy: moderate
+  technical_manual:
+    register_mix: {expert_to_expert: 0.60, professional_operational: 0.40}
+    required_elements: [scope, specs_table, procedure_steps, warnings, troubleshooting]
+    numeric_policy: heavy
+
+# ---------------------------------------------------------------------------
+# Human register rubric (spec §6) — five pass/fail questions, no partial credit
+# ---------------------------------------------------------------------------
+rubric:
+  questions:
+    - id: H1
+      question: Would a specialist in this field read it as a peer's writing?
+    - id: H2
+      question: Are technical terms used without defining the elementary ones?
+    - id: H3
+      question: Does it carry the numbers and identifiers this genre always has?
+    - id: H4
+      question: Does it follow the genre's structure rather than an essay shape?
+    - id: H5
+      question: Is it free of motivational and importance framing?
+  verdicts: [accept, regenerate, discard]
+
+# ---------------------------------------------------------------------------
+# Calibration pilot (D16). Must run before any scaled generation.
+# ---------------------------------------------------------------------------
+calibration:
+  samples_per_cell: 15
+  cells: domain_x_subject_field
+  total_samples_estimate: 1050      # 10 domains x 7 fields x 15
+  threshold_rule: p25_of_human_accepted_pooled_by_register_tier
+  pooling_note: >-
+    per-cell n=15 is too small for a stable 25th percentile, so thresholds are
+    estimated on samples pooled within each register tier (~630 expert, ~260
+    operational, ~126 pedagogical at the cal/15 rate). The pooled estimate is
+    provisional; it is re-estimated once the first 200 accepted units per tier
+    exist. Treat calibration as a smoke test of the generator, not a
+    distributional study.
+  freeze_into: this file, with calibration_manifest sha256
+  status: not_started

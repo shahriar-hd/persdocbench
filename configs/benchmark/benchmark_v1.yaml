@@ -1,0 +1,179 @@
+# PersDocBench benchmark configuration v1.0-draft
+# Machine-readable twin of docs/dataset/benchmark_spec_v1.md
+# Status: DRAFT — Gate 2, pending approval of decisions D1–D12.
+# Every number here is a PROPOSAL. Validated by scripts/validate_benchmark_config.py.
+
+schema_version: "1.0"
+name: PersDocBench
+version: v1
+status: draft
+approved: false
+
+scope:
+  capabilities: [page_ocr, layout, reading_order, table, markdown, vqa]
+  deferred: [formula, chart, entity_kie, classification, handwriting]
+  primary_language: fa
+  script_styles: [naskh, titr, nastaliq]
+
+units:
+  content_units_core: 1500
+  content_units_parallel_control: 100   # 50 layouts x 2 languages (fa, ar)
+  content_units_total: 1600
+  images_total: 6000
+  qa_items: 3000
+  split_unit: document            # never page
+
+domains:
+  # share must sum to 1.0 over pages_core
+  - {id: administrative_letter,  pages: 180, share: 0.12, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: form_government,        pages: 180, share: 0.12, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+  - {id: banking_insurance,      pages: 165, share: 0.11, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
+  - {id: financial_invoice,      pages: 165, share: 0.11, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
+  - {id: academic_paper,         pages: 150, share: 0.10, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: educational,            pages: 165, share: 0.11, difficulty: {easy: 0.35, medium: 0.50, hard: 0.15}}
+  - {id: legal_contract,         pages: 135, share: 0.09, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+  - {id: book_literary,          pages: 135, share: 0.09, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: news_web,               pages: 135, share: 0.09, difficulty: {easy: 0.40, medium: 0.45, hard: 0.15}}
+  - {id: technical_manual,       pages:  90, share: 0.06, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+
+domain_groups:
+  administrative_cluster: [administrative_letter, form_government, banking_insurance, financial_invoice]
+  administrative_cluster_share_target: 0.46    # approved direction (T3)
+
+language_mix:
+  persian_only:                {pages: 1260, share: 0.84}
+  persian_latin_mixed:         {pages:  210, share: 0.14}
+  persian_arabic_indic_digits: {pages:   30, share: 0.02}
+
+script_style_mix:
+  naskh_titr: 1380
+  nastaliq:    120      # cap 8%: literary 90 + educational 30
+
+layout_families:
+  - {id: single_column_letter, pages: 250, columns: 1}
+  - {id: form_grid,            pages: 200, columns: 2}
+  - {id: two_column,           pages: 250, columns: 2}
+  - {id: three_column_news,    pages: 150, columns: 3}
+  - {id: table_dominant,       pages: 250, columns: 1}
+  - {id: academic_two_column,  pages: 150, columns: 2}
+  - {id: book_page,            pages: 150, columns: 1}
+  - {id: mixed_banner,         pages: 100, columns: 2}
+
+page_sizes:
+  A4_portrait:  0.78
+  A4_landscape: 0.09
+  A3_portrait:  0.05
+  A5_portrait:  0.08
+
+conditions:
+  P0:
+    name: clean
+    construction: browser_render
+    dpi: 200
+    pages_core: 1500
+    images: 1500
+    acquisition_path: render
+  P1a:
+    name: digital_degraded_photometric
+    construction: [aging, ink_bleed, show_through, uneven_illumination, jpeg_q40_75, mild_blur]
+    pages_core: 1500
+    variants_per_page: 1
+    images: 1500
+    acquisition_path: sim_degraded
+  P1b:
+    name: digital_degraded_geometric
+    construction: [perspective_warp, page_curl, rotation_pm2deg, shadow_gradient, moire, downscale_120_200dpi]
+    pages_core: 1500
+    variants_per_page: 1
+    images: 1500
+    acquisition_path: sim_degraded
+  P2:
+    name: real_capture
+    construction: print_then_camera
+    pages_core: 600
+    chains: [P2_flat, P2_oblique]
+    images: 1200
+    acquisition_path: print_capture
+    content_origin: synthetic_native
+    domain_quota_per_domain: 60
+    difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}
+
+parallel_control:
+  units: 100
+  languages: [fa, ar]
+  conditions: [P0, P1a, P1b]
+  images: 300
+  included_in_headline: false
+
+splits:
+  dev:         {content_units: 300, share: 0.20}
+  test_public: {content_units: 600, share: 0.40}
+  test_sealed: {content_units: 600, share: 0.40, gated: true}
+  parallel_control: {dev: 20, test_public: 80}
+  leakage_controls:
+    split_by: document
+    content_key: sha256(normalised_source_text + layout_template_id)
+    phash_hamming_max: 6
+    minhash_jaccard_max: 0.85
+    template_disjoint: true
+    templates_reserved_for_test: 0.20
+    sealed_scoring_budget: 1          # per reported result
+    prompt_tuning_on_sealed: forbidden
+
+ood_strata:
+  in_distribution: 0.80
+  ood_template:    0.10
+  ood_font:        0.05
+  ood_domain:      0.05
+
+annotation:
+  coverage:
+    page_metadata: 1.0
+    layout: 1.0
+    text: 1.0
+    reading_order: 1.0
+    tables: 1.0            # of pages containing tables
+    markdown: 1.0
+    line_word_boxes: 500   # pages
+    vqa: 3000              # items
+    entity_kie: 0
+  human_verification_rate:
+    layout: 0.20
+    text: 0.20
+    reading_order: 0.20
+    tables: 0.30
+    markdown: 0.20
+    line_word_boxes: 0.10
+    vqa: 1.00
+  double_annotation_pages: 150
+  effort_hours_estimate: 229
+
+vqa:
+  total: 3000
+  categories:
+    direct_lookup:      900
+    table_cell_row_col: 600
+    cross_block:        450
+    arithmetic:         300
+    layout_reading:     300
+    unanswerable:       300
+    cross_page:         150
+
+provenance:
+  content_origin: {synthetic_native: 1.0}
+  acquisition_paths: [render, sim_degraded, print_capture]
+  third_party_content: none
+  note: >
+    P2 pages are synthetic_native content captured physically. They must be described as
+    "realistically captured synthetic pages", never as real documents.
+
+release:
+  code_licence: Apache-2.0
+  dataset_licence_proposed: CC-BY-4.0
+  sealed_set_access: gated
+  redistribute_third_party: false
+
+privacy:
+  pii_by_construction: true
+  scans: [iranian_national_id, sheba_ir24, mobile_11digit, email_regex, entropy_check]
+  on_hit: reject_and_log
