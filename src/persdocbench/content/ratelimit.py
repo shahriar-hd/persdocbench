@@ -13,11 +13,12 @@ Design notes:
 - The clock is injectable so tests are deterministic and instant.
 - Nothing here sleeps in a busy loop; waiting is a single computed sleep.
 """
+
 from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 
@@ -29,12 +30,14 @@ class TokenBucket:
         rate_per_minute: float,
         burst: int | None = None,
         clock: Callable[[], float] = time.monotonic,
-        sleeper: Callable[[float], "asyncio.Future[None] | object"] | None = None,
+        sleeper: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         if rate_per_minute <= 0:
             raise ValueError("rate_per_minute must be positive")
         self.rate = rate_per_minute / 60.0
-        self.capacity = float(burst if burst is not None else max(1, int(rate_per_minute)))
+        self.capacity = float(
+            burst if burst is not None else max(1, int(rate_per_minute))
+        )
         self._tokens = self.capacity
         self._clock = clock
         self._last = clock()
@@ -94,14 +97,14 @@ class Budget:
     _used_tokens: int = field(default=0, init=False)
 
     def can_send(self, n: int = 1, tokens: int = 0) -> bool:
-        if self.max_requests is not None and self._used_requests + n > self.max_requests:
-            return False
-        if (
+        over_requests = (
+            self.max_requests is not None and self._used_requests + n > self.max_requests
+        )
+        over_tokens = (
             self.max_total_tokens is not None
             and self._used_tokens + tokens > self.max_total_tokens
-        ):
-            return False
-        return True
+        )
+        return not (over_requests or over_tokens)
 
     def charge(self, n: int = 1, tokens: int = 0) -> None:
         self._used_requests += n

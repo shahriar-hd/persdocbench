@@ -16,6 +16,7 @@ Two different jobs live here and they must not be confused:
 A gate that silently rewrites text would make the benchmark a measurement of our
 cleanup script instead of the model's output.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -92,7 +93,12 @@ def fold_for_matching(text: str) -> str:
     text = text.replace(ZWNJ, "").replace(ZWNJ_TAIL, "").replace(KASHIDA, "")
     text = re.sub(r"[\u064b-\u065f\u0670]", "", text)  # harakat/tanwin
     text = text.translate(ARABIC_TO_PERSIAN)
-    text = text.replace("ي", "ی").replace("ك", "ک").replace("\u0623", "ا").replace("\u0625", "ا")
+    text = (
+        text.replace("ي", "ی")
+        .replace("ك", "ک")
+        .replace("\u0623", "ا")
+        .replace("\u0625", "ا")
+    )
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
@@ -136,6 +142,37 @@ def word_count(text: str) -> int:
     return len(words(text))
 
 
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.MULTILINE)
+_HEADING = re.compile(r"^\s*#{1,6}.*$|^\s*\*\*[^*]{1,80}\*\*\s*$", re.MULTILINE)
+
+
+def body_text(text: str) -> str:
+    """Prose only: drop markdown table rows, table rules and heading lines.
+
+    R5 measures sentence rhythm over body prose. Measuring whole pages instead
+    punishes every document that legitimately contains a table or a label block —
+    observed on the first live batch, where a correct invoice scored
+    mean 10.7 words/sentence purely because its table rows were counted as
+    sentences.
+    """
+    out = _TABLE_ROW.sub("", text)
+    out = _HEADING.sub("", out)
+    out = re.sub(r"^\s*[-–—|]{3,}\s*$", "", out, flags=re.MULTILINE)
+    return out
+
+
+def prose_lines(text: str) -> str:
+    """Only lines long enough to be sentences.
+
+    R5 measures prose rhythm. A government form is *correct* at "شماره: ۱۲۳۴" on its
+    own line, and counting those 3-word lines as sentences reports a register defect
+    that is not there. Lines under six words are therefore dropped before R5, while
+    R1/R3 keep the whole body (a number in a table row still counts as a number).
+    """
+    keep = [ln for ln in body_text(text).splitlines() if len(words(ln)) >= 6]
+    return "\n".join(keep)
+
+
 def mean_words_per_sentence(text: str) -> float:
     ss = sentences(text)
     if not ss:
@@ -148,7 +185,9 @@ def digit_style(text: str) -> str:
     has_p = any(ch in PERSIAN_DIGITS for ch in text)
     has_a = any(ch in ARABIC_DIGITS for ch in text)
     has_l = bool(re.search(r"[0-9]", text))
-    kinds = [n for n, flag in (("persian", has_p), ("arabic", has_a), ("latin", has_l)) if flag]
+    kinds = [
+        n for n, flag in (("persian", has_p), ("arabic", has_a), ("latin", has_l)) if flag
+    ]
     if not kinds:
         return "none"
     return kinds[0] if len(kinds) == 1 else "mixed"
@@ -213,9 +252,22 @@ def find_banned_patterns(text: str, patterns: Iterable[str]) -> list[str]:
 
 
 def find_echo(text: str) -> list[str]:
-    folded = fold_for_matching(text)
+    """Echoes are *assistant responses*, so they can only occur at the start.
+
+    Scoping the search to the opening (first 40 words) does two things: it keeps
+    catching the real defect — the model replying "حتما، این متن را مینویسم…"
+    instead of producing the document — and it stops flagging the formal adverb
+    "حتماً" or "یعنی" that legitimately appears in the body of expert prose.
+    Measured on the third live batch: 9 of 23 outputs were hard-rejected, all on
+    single mid-text words; none of them were actually assistant responses.
+    """
+    tokens = words(text)
+    if not tokens:
+        return []
+    head = " ".join(tokens[:40])
+    folded = fold_for_matching(head)
     hits = [m.group(0) for m in _PERSIAN_ECHO.finditer(folded)]
-    hits += [m.group(0) for m in _ENGLISH_ECHO.finditer(text)]
+    hits += [m.group(0) for m in _ENGLISH_ECHO.finditer(head)]
     return hits
 
 
@@ -241,7 +293,7 @@ def evaluate(
     echo_hits = find_echo(text)
     term_d = terminology_density(text, lexicon) if lexicon else 0.0
     num_d = numeric_density(text)
-    msw = mean_words_per_sentence(text)
+    msw = mean_words_per_sentence(prose_lines(text))
     wc = word_count(text)
 
     if not text.strip():

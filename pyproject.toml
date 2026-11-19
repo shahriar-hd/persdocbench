@@ -85,7 +85,14 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
-ignore = ["E501"]
+# E501: Persian prose and prompt templates are long by nature.
+# RUF001-003: the project's core material IS Persian text; flagging Persian
+#   digits/letters inside string literals as "ambiguous" would make every
+#   content gate and test unrunnable.
+# N818: Retryable/Fatal are deliberate taxonomy names in the dispatcher,
+#   documented in content_generation_pipeline_v1.md and referenced by
+#   generation_v1.yaml fallthrough_on; the Error suffix would add nothing.
+ignore = ["E501", "RUF001", "RUF002", "RUF003", "N818"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

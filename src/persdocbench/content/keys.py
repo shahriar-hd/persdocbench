@@ -24,13 +24,14 @@ terms of service and with per-account quotas. That is an operator decision, and
 it is recorded as such in the Gate-3 execution plan — the code simply makes the
 choice explicit and auditable instead of hiding it in a shell loop.
 """
+
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from persdocbench.content.ratelimit import TokenBucket
@@ -97,7 +98,7 @@ class KeyPool:
         rate_per_minute: float = 60.0,
         burst: int | None = None,
         clock: Callable[[], float] | None = None,
-        sleeper: Callable[[float], object] | None = None,
+        sleeper: Callable[[float], Awaitable[None]] | None = None,
         stagger_seconds: float = 0.0,
     ) -> None:
         if not secrets:
@@ -113,7 +114,7 @@ class KeyPool:
                 rate_per_minute,
                 burst=burst,
                 clock=self._clock,
-                sleeper=self._sleep,  # type: ignore[arg-type]
+                sleeper=self._sleep,
             )
             key = Key(secret=secret, bucket=bucket)
             if stagger_seconds:
@@ -125,9 +126,7 @@ class KeyPool:
 
     # -- construction ------------------------------------------------------
     @classmethod
-    def from_env(
-        cls, var: str = "NVIDIA_API_KEY", **kwargs: object
-    ) -> "KeyPool":
+    def from_env(cls, var: str = "NVIDIA_API_KEY", **kwargs: object) -> KeyPool:
         return cls(parse_keys(os.environ.get(var)), **kwargs)  # type: ignore[arg-type]
 
     # -- capacity ----------------------------------------------------------
@@ -153,7 +152,7 @@ class KeyPool:
             return None
         # Soonest-ready bucket wins; round-robin breaks exact ties so keys age evenly.
         elig.sort(key=lambda k: (k.bucket.wait_time(), self.keys.index(k)))
-        order = elig[self._rr % len(elig):] + elig[: self._rr % len(elig)]
+        order = elig[self._rr % len(elig) :] + elig[: self._rr % len(elig)]
         self._rr += 1
         best = min(order, key=lambda k: k.bucket.wait_time())
         return best

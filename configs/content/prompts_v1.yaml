@@ -1,0 +1,223 @@
+# Prompt profile — content generation v1.0-draft (Gate 3 input)
+#
+# Consumed by scripts/generate_content.py. Every prompt is built from
+# configs/content/register_v1.yaml (axes, lexicons, banned patterns) and this file
+# contributes only the *instruction shape*: nothing here duplicates a lexicon or a
+# banned pattern, so there is exactly one source of truth for both.
+#
+# Design constraint (D14/D15): the register is expert-to-expert by default, and the
+# single most damaging failure mode is a lay explainer — prose that defines a term a
+# professional already knows, or addresses the reader as a newcomer. The system prompt
+# therefore forbids explaining and forbids the opening moves that reveal an explainer.
+# The banned-pattern gate then checks that the instruction was obeyed.
+
+version: "1.0-draft"
+status: draft
+approved: false
+
+# Length is a *page* constraint, not a taste constraint: the renderer needs enough
+# body text to fill an A4 page at the target layout, and Persian at ~11 pt with 1.0
+# spacing fits roughly 320-420 words per full text page.
+length:
+  body_words_min: 320
+  body_words_max: 430
+  # The band the *spec* accepts (±10 %). The instruction asks for `target_min`
+  # instead: models under-write when told "between 320 and 430" and landed at a
+  # median of 275 words on the first two live batches (19/20 accepted, 13 flagged
+  # short). Asking for a number inside the band with margin is cheaper than a
+  # continuation pass and does not change the acceptance rule.
+  target_min: 355
+  tolerance: 0.10          # outside this band -> soft flag, not a reject
+
+system: |
+  شما نویسندهٔ متون تخصصی فارسی هستید و برای همکاران متخصص خود می‌نویسید، نه برای خوانندهٔ عمومی.
+  متن باید در حوزهٔ «{domain_fa}» و زیرحوزهٔ «{subject_field_fa}» باشد و لحن آن «{register_fa}» باشد.
+
+  قواعد قطعی:
+  ۱. هیچ اصطلاح تخصصی را تعریف نکنید. خواننده آن را می‌داند.
+  ۲. با جملهٔ تعریف، مقدمه‌چینی، یا مخاطب‌قراردادن آغاز نکنید. مستقیم وارد موضوع شوید.
+  ۳. از عبارت‌های کلیشه‌ای و آموزشی پرهیز کنید؛ فهرست ممنوع در پیام کاربر آمده است.
+  ۴. واژگان تخصصی را به‌کار ببرید، اما بی‌دلیل انباشته نکنید: هر واژه باید در جمله کارکرد داشته باشد.
+  ۵. عدد، واحد، بازه و شرط را در جای خود بیاورید؛ متن گزارشی، نه تبلیغی.
+  ۶. قالب را رعایت کنید: فقط همان بخش‌هایی که خواسته شده، با سرتیتر یا برچسب متناسب با نوع سند.
+  ۷. خروجی فقط متن سند است. هیچ توضیحی دربارهٔ خودت، هیچ عذرخواهی، هیچ «در اینجا متن…» ننویس.
+  ۸. به فارسی روان و رسمی بنویسید؛ نیم‌فاصله را درست به‌کار ببرید.
+  ۹. خروجی را مستقیماً با اولین بخشِ محتواییِ سند آغاز کنید. هیچ تأیید، تأکید،
+     وعده، یا پاسخ به این دستور (مانند «حتماً»، «بله»، «در ادامه») در ابتدای
+     خروجی نیاید؛ آن‌ها متن را نامعتبر می‌کنند.
+
+user: |
+  نوع سند: {domain_fa}
+  حوزهٔ موضوعی: {subject_field_fa}
+  سطح مخاطب: {register_fa} — {reader_assumes_fa}
+  {defines_terms_line}
+
+  بخش‌های لازم (به همین ترتیب): {elements_fa}
+
+  طول متن: بدنهٔ متن (بدون سرتیتر و بدون ردیف‌های جدول) باید دست‌کم
+  {target_min} واژه و حداکثر {body_words_max} واژه باشد. نوشته‌های کوتاه‌تر از
+  {target_min} واژه در بازبینی پذیرفته نمی‌شوند؛ متن کوتاه یعنی جزئیات فنیِ
+  بخش‌های موجود ناقص است، نه اینکه باید بخش تازه‌ای یا حاشیه‌ای اضافه شود.
+  سیاست عددی: {numeric_policy_fa}
+  سبک رقم: {digit_style_fa}
+  زاویهٔ این نمونه: {angle_fa}
+
+  واژگانی که توقع می‌رود در متن دیده شود (به‌صورت طبیعی، نه فهرست‌وار):
+  {lexicon_hint}
+
+  هرگز این عبارت‌ها را به‌کار نبرید:
+  {banned_hint}
+
+  خروجی فقط متن سند است و با نخستین جملهٔ محتوایی آغاز می‌شود.
+
+# Rotation set. One angle per unit, chosen by the unit's seeded index, so 1,600 units
+# are not 1,600 paraphrases of one instruction. Each angle is a *concrete* situation a
+# specialist would recognise, which is what separates realistic prose from an essay.
+angles:
+  - id: case_report
+    fa: "شرح یک مورد یا رخداد مشخص با داده‌های واقعی‌نما"
+  - id: procedure
+    fa: "روش اجرایی گام‌به‌گام با شرایط و محدودیت‌ها"
+  - id: comparative
+    fa: "مقایسهٔ دو گزینه یا دو رویکرد با معیارهای صریح"
+  - id: exception_handling
+    fa: "بررسی یک خطا، انحراف یا استثنا و نحوهٔ رفع آن"
+  - id: compliance
+    fa: "انطباق با الزام یا استاندارد و مستندسازی آن"
+  - id: measurement
+    fa: "گزارش سنجش، بازهٔ اطمینان و تفسیر نتیجه"
+  - id: review
+    fa: "مرور انتقادی یک تصمیم یا سند پیشین"
+  - id: adjudication
+    fa: "داوری میان دو تفسیر با استناد به مفاد و رویه"
+  - id: schedule
+    fa: "برنامهٔ زمانی، منابع و وابستگی‌ها"
+  - id: analysis
+    fa: "تحلیل علّی یک مشاهده با شواهد و فرض‌های صریح"
+  - id: correspondence
+    fa: "مکاتبهٔ رسمی دربارهٔ یک موضوع جاری با ارجاع و پیوست"
+  - id: specification
+    fa: "مشخصات فنی با مقادیر نامی، تلورانس و شرایط کارکرد"
+
+# Digit style. Persian pages are not uniform: administrative and legal documents use
+# Persian digits, technical and financial tables frequently use Latin digits, and a
+# benchmark that only contains one style tests only one style (metric_protocol.md M4).
+digit_styles:
+  fa_digits:
+    label_fa: "ارقام فارسی (۰۱۲۳۴۵۶۷۸۹) در سراسر متن"
+    weight: 0.7
+  latin_digits:
+    label_fa: "ارقام لاتین (0123456789) در سراسر متن"
+    weight: 0.25
+  mixed_digits:
+    label_fa: "ارقام فارسی در متن و ارقام لاتین در جدول‌ها و کدها"
+    weight: 0.05
+
+# Per-register phrasing used to fill {register_fa} / {reader_assumes_fa}.
+register_phrasing:
+  expert_to_expert:
+    register_fa: "متخصص به متخصص"
+    reader_assumes_fa: "خوانندهٔ حرفه‌ای همان رشته است و اصطلاحات را می‌شناسد"
+    defines_terms_line: "هیچ اصطلاحی را تعریف نکنید."
+  professional_operational:
+    register_fa: "عملیاتی-حرفه‌ای"
+    reader_assumes_fa: "کاربر آموزش‌دیدهٔ همان سامانه یا فرایند است"
+    defines_terms_line: "اصطلاحات فرایندی را توضیح ندهید؛ فقط اقدام و شرط را بنویسید."
+  pedagogical_expert:
+    register_fa: "آموزشی-تخصصی"
+    reader_assumes_fa: "دانشجوی همان رشته است"
+    defines_terms_line: "اصطلاح کلیدی را فقط یک بار و به‌صورت فشرده تعریف کنید."
+  public_facing_formal:
+    register_fa: "رسمی-عمومی"
+    reader_assumes_fa: "خوانندهٔ آگاه غیرمتخصص است"
+    defines_terms_line: "می‌توانید اصطلاح را کوتاه توضیح دهید، اما متن را ساده‌سازی نکنید."
+
+# Domain phrasing for {domain_fa} / {elements_fa}. Element names are the ids used in
+# register_v1.yaml; the Persian label is what the prompt shows.
+domain_labels:
+  administrative_letter:
+    fa: "نامهٔ اداری"
+    element_labels:
+      reference_line: "شماره، تاریخ و ارجاع"
+      body_paragraphs: "بندهای متن"
+      closing: "پایان‌بندی"
+      signatory_block: "امضاکننده و سمت"
+  form_government:
+    fa: "فرم دولتی"
+    element_labels:
+      field_labels: "برچسب فیلدها"
+      required_markers: "نشانهٔ فیلدهای الزامی"
+      instructions: "راهنمای تکمیل"
+      tracking_code: "کد رهگیری"
+  banking_insurance:
+    fa: "سند بانکی یا بیمه‌ای"
+    element_labels:
+      account_block: "مشخصات حساب یا بیمه‌نامه"
+      transaction_table: "جدول گردش یا اقلام"
+      notes: "یادداشت‌ها"
+      totals: "جمع و مانده"
+  financial_invoice:
+    fa: "صورتحساب مالی"
+    element_labels:
+      issuer_buyer_block: "صادرکننده و خریدار"
+      line_items: "ردیف‌های کالا یا خدمت"
+      tax_rows: "ردیف‌های مالیات و عوارض"
+      totals: "جمع کل"
+  academic_paper:
+    fa: "مقالهٔ پژوهشی"
+    element_labels:
+      abstract: "چکیده"
+      keywords: "کلیدواژه‌ها"
+      method: "روش"
+      results: "نتایج"
+      discussion: "بحث"
+      limitations: "محدودیت‌ها"
+  educational:
+    fa: "متن آموزشی"
+    element_labels:
+      objective: "هدف"
+      explanation: "توضیح تخصصی"
+      exercise_or_example: "تمرین یا مثال"
+  legal_contract:
+    fa: "قرارداد حقوقی"
+    element_labels:
+      parties: "طرفین"
+      definitions: "تعاریف"
+      numbered_obligations: "تعهدات شماره‌دار"
+      termination: "فسخ و خاتمه"
+      dispute_clause: "شرط حل اختلاف"
+  book_literary:
+    fa: "متن ادبی یا کتاب"
+    element_labels:
+      running_text: "متن پیوسته"
+      chapter_markers: "نشانه‌های فصل"
+  news_web:
+    fa: "خبر یا صفحهٔ وب"
+    element_labels:
+      headline: "تیتر"
+      lead: "لید"
+      body: "بدنهٔ خبر"
+      attribution: "منبع و ارجاع"
+      dateline: "جایگاه و تاریخ"
+  technical_manual:
+    fa: "راهنمای فنی"
+    element_labels:
+      scope: "دامنهٔ کاربرد"
+      specs_table: "جدول مشخصات"
+      procedure_steps: "گام‌های دستور کار"
+      warnings: "هشدارها"
+      troubleshooting: "عیب‌یابی"
+
+numeric_policy_phrasing:
+  heavy: "عدد و واحد در بیشتر بندها بیاید (حداقل یک کمیت با واحد در هر ۸۰ واژه)."
+  moderate: "عدد و واحد در بخش‌های کلیدی بیاید."
+  light: "عدد فقط جایی که طبیعی است؛ از انباشتن عدد پرهیز کنید."
+
+subject_field_labels:
+  medicine_biology: "پزشکی و زیست‌شناسی"
+  engineering_technical: "مهندسی و فنی"
+  finance_economics: "مالی و اقتصاد"
+  law_policy: "حقوق و سیاست‌گذاری"
+  education_social: "علوم تربیتی و اجتماعی"
+  literature_culture: "ادبیات و فرهنگ"
+  general_administration: "اداری و سازمانی"

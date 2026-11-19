@@ -18,6 +18,7 @@ Properties relied upon by the dispatcher:
   id. Nothing is rewritten in place, so an audit can reconstruct what happened
   and when.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,7 +42,9 @@ class Status(StrEnum):
 TERMINAL = {Status.OK, Status.FAILED, Status.REJECTED}
 
 
-def request_id(*, model: str, prompt: str, params: dict[str, Any], variant: str = "") -> str:
+def request_id(
+    *, model: str, prompt: str, params: dict[str, Any], variant: str = ""
+) -> str:
     """Stable id for a (model, prompt, params) triple.
 
     Deliberately excludes the API key, the timestamp and the shard: those are

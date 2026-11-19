@@ -7,6 +7,7 @@ possible defence against publishing a benchmark whose own arithmetic is wrong.
 The validator script is the single implementation; tests exercise it rather than
 duplicating the arithmetic.
 """
+
 from __future__ import annotations
 
 import csv
@@ -129,8 +130,10 @@ def test_sealed_split_withholds_images_and_labels(cfg: dict) -> None:
     assert sealed["images_published"] is False
     assert sealed["text_gt_published"] is False
     assert sealed["submission_format"] == "predictions_json"
-    assert sealed["scoring_budget_per_model"] == \
-        cfg["splits"]["leakage_controls"]["sealed_scoring_budget"]
+    assert (
+        sealed["scoring_budget_per_model"]
+        == cfg["splits"]["leakage_controls"]["sealed_scoring_budget"]
+    )
 
 
 def test_dataset_licence_choice_is_recorded_with_its_cost(cfg: dict) -> None:
@@ -173,7 +176,9 @@ def test_count_matrix_matches_config() -> None:
     cfg = yaml.safe_load(CFG_PATH.read_text(encoding="utf-8"))
     out = ROOT / "docs" / "dataset" / "count_matrix_v1.csv"
     if not out.is_file():
-        pytest.skip("count matrix not generated; run scripts/validate_benchmark_config.py")
+        pytest.skip(
+            "count matrix not generated; run scripts/validate_benchmark_config.py"
+        )
     rows = list(csv.DictReader(out.open(encoding="utf-8")))
     assert rows, "empty count matrix"
 
@@ -183,18 +188,21 @@ def test_count_matrix_matches_config() -> None:
         per_condition.setdefault(r["condition"], 0)
     for cond in ("P0", "P1a", "P1b"):
         pages = sum(
-            int(r["content_units"]) for r in rows
+            int(r["content_units"])
+            for r in rows
             if r["condition"] == cond and r["capability"] == "page_ocr"
         )
         assert pages == core, f"{cond}: matrix covers {pages} pages, config says {core}"
     p2 = cfg["conditions"]["P2"]
     p2_units = sum(
-        int(r["content_units"]) for r in rows
+        int(r["content_units"])
+        for r in rows
         if r["condition"] == "P2" and r["capability"] == "page_ocr"
     )
     assert p2_units == p2["pages_core"], f"P2 matrix covers {p2_units} pages"
     p2_images = sum(
-        int(r["images"]) for r in rows
+        int(r["images"])
+        for r in rows
         if r["condition"] == "P2" and r["capability"] == "page_ocr"
     )
     assert p2_images == p2["images"], f"P2 matrix covers {p2_images} images"
@@ -202,29 +210,39 @@ def test_count_matrix_matches_config() -> None:
 
 def test_font_inventory_meets_the_30_family_requirement(cfg: dict) -> None:
     """D3/D30: ~30 Persian families, >= 4 handwriting-like, every licence verified."""
-    fonts = yaml.safe_load((ROOT / "configs" / "content" / "fonts_v1.yaml")
-                           .read_text(encoding="utf-8"))
+    fonts = yaml.safe_load(
+        (ROOT / "configs" / "content" / "fonts_v1.yaml").read_text(encoding="utf-8")
+    )
     groups = fonts["families"]
     total = sum(len(v) for v in groups.values())
     assert total >= cfg["rendering"]["families_min"] >= 30
-    assert len(groups["handwriting_like"]) >= cfg["rendering"]["handwriting_like_min"] >= 4
+    assert (
+        len(groups["handwriting_like"]) >= cfg["rendering"]["handwriting_like_min"] >= 4
+    )
     assert fonts["counts"]["total"] == total
-    unverified = [e["id"] for rows in groups.values() for e in rows
-                  if e.get("licence") == "unverified"]
+    unverified = [
+        e["id"]
+        for rows in groups.values()
+        for e in rows
+        if e.get("licence") == "unverified"
+    ]
     assert unverified, "the unverified entry must stay visible, not deleted"
-    assert all(e.get("licence_sha") or e.get("repo") for rows in groups.values()
-               for e in rows), "every family must name its source or its licence sha"
+    assert all(
+        e.get("licence_sha") or e.get("repo") for rows in groups.values() for e in rows
+    ), "every family must name its source or its licence sha"
 
 
 def test_proprietary_fonts_are_excluded_not_silently_used(cfg: dict) -> None:
     """B Nazanin and IRANSansX are the most common Persian fonts and both are blocked."""
-    fonts = yaml.safe_load((ROOT / "configs" / "content" / "fonts_v1.yaml")
-                           .read_text(encoding="utf-8"))
+    fonts = yaml.safe_load(
+        (ROOT / "configs" / "content" / "fonts_v1.yaml").read_text(encoding="utf-8")
+    )
     pending = " ".join(str(e) for e in fonts["pending_licence_verification"])
     assert "IRANSansX" in pending
     assert "Nazanin" in pending
     assert fonts["policy"]["redistribute_font_files"] is False
     assert fonts["policy"]["output_images_carry_font_licence"] is False
+
 
 # --- content register profile (Gate-3 input) --------------------------------
 

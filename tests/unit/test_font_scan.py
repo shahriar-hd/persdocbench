@@ -47,7 +47,11 @@ def test_pending_families_are_not_reported_as_inventory() -> None:
         "families": {
             "text_naskh": [
                 {"name": "Vazirmatn", "licence": "OFL-1.1"},
-                {"name": "IranShahr", "licence": "unverified", "status": "excluded_pending_licence"},
+                {
+                    "name": "IranShahr",
+                    "licence": "unverified",
+                    "status": "excluded_pending_licence",
+                },
             ]
         },
         "pending_licence_verification": [{"name": "IRANSansX"}],

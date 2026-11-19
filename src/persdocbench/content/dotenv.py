@@ -12,6 +12,7 @@ stale file on disk.
 Nothing in this module prints, logs or returns an error message containing a
 value: parsing errors name the key, never the secret.
 """
+
 from __future__ import annotations
 
 import os

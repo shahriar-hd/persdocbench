@@ -18,12 +18,13 @@ is not scored at all: it is listed separately with its error class, because
 All measurements are reported with units and are reproducible from
 ``results.jsonl``.
 """
+
 from __future__ import annotations
 
 import statistics
 import unicodedata
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence
 
 PERSIAN_LETTERS = set(
     "اآأإءبپتثجچحخدذرزژسشصضطظعغفقکگلمنوهیۀ"
@@ -128,7 +129,9 @@ def _median(values: Sequence[float]) -> float:
     return float(statistics.median(values)) if values else 0.0
 
 
-def summarise(rows: Iterable[ProbeRow], banned_hits: dict[tuple[str, str], int] | None = None) -> list[ModelSummary]:
+def summarise(
+    rows: Iterable[ProbeRow], banned_hits: dict[tuple[str, str], int] | None = None
+) -> list[ModelSummary]:
     """Aggregate per model. ``banned_hits`` maps (model, probe) → count of banned hits."""
     banned_hits = banned_hits or {}
     by_model: dict[str, list[ProbeRow]] = {}
@@ -147,8 +150,14 @@ def summarise(rows: Iterable[ProbeRow], banned_hits: dict[tuple[str, str], int] 
                 success_rate=len(good) / len(rs) if rs else 0.0,
                 median_latency_s=_median([r.latency_s for r in good]),
                 median_tok_per_s=_median([r.tok_per_s for r in good]),
-                mean_persian_ratio=(sum(r.persian_ratio for r in good) / len(good)) if good else 0.0,
-                gate_pass_rate=(sum(1 for r in good if r.gate_verdict == "accept") / len(good)) if good else 0.0,
+                mean_persian_ratio=(sum(r.persian_ratio for r in good) / len(good))
+                if good
+                else 0.0,
+                gate_pass_rate=(
+                    sum(1 for r in good if r.gate_verdict == "accept") / len(good)
+                )
+                if good
+                else 0.0,
                 ban_rate=(hits / len(rs)) if rs else 0.0,
                 error_classes=[r.error_class for r in rs if not r.ok],
             )
@@ -167,7 +176,9 @@ def _norm(values: list[float], *, higher_is_better: bool) -> list[float]:
     return [(hi - v) / (hi - lo) for v in values]
 
 
-def rank(summaries: Sequence[ModelSummary]) -> tuple[list[ModelSummary], list[ModelSummary]]:
+def rank(
+    summaries: Sequence[ModelSummary],
+) -> tuple[list[ModelSummary], list[ModelSummary]]:
     """Score and sort. Returns (ranked, unavailable).
 
     Unavailable = zero successful probes. They are excluded from scoring so their
@@ -191,11 +202,15 @@ def rank(summaries: Sequence[ModelSummary]) -> tuple[list[ModelSummary], list[Mo
                 + WEIGHTS["speed"] * n_speed[i]
                 + WEIGHTS["latency"] * n_latency[i]
             )
-    ranked = sorted(live, key=lambda s: (-s.score, -s.success_rate, s.median_latency_s, s.model))
+    ranked = sorted(
+        live, key=lambda s: (-s.score, -s.success_rate, s.median_latency_s, s.model)
+    )
     return ranked, sorted(dead, key=lambda s: s.model)
 
 
-def to_markdown(ranked: Sequence[ModelSummary], dead: Sequence[ModelSummary], *, probe_count: int) -> str:
+def to_markdown(
+    ranked: Sequence[ModelSummary], dead: Sequence[ModelSummary], *, probe_count: int
+) -> str:
     lines = [
         "# NVIDIA endpoint model probe",
         "",
@@ -227,5 +242,7 @@ def to_markdown(ranked: Sequence[ModelSummary], dead: Sequence[ModelSummary], *,
             "|-------|-------------|",
         ]
         for s in dead:
-            lines.append(f"| `{s.model}` | {', '.join(sorted(set(s.error_classes))) or 'n/v'} |")
+            lines.append(
+                f"| `{s.model}` | {', '.join(sorted(set(s.error_classes))) or 'n/v'} |"
+            )
     return "\n".join(lines) + "\n"

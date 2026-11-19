@@ -4,6 +4,7 @@ No network is touched. The fake clock/sleeper pair makes rate-limit behaviour
 deterministic and instant, which is the only way to test that a 60 req/min
 rhythm is actually respected rather than accidentally bypassed.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -101,6 +102,7 @@ def test_secrets_never_appear_in_repr_or_snapshot() -> None:
 # ---------------------------------------------------------------------------
 def test_token_bucket_respects_rate() -> None:
     ft = FakeTime()
+    _ = ft  # placeholder kept for symmetry with the two-key test below
     tb = TokenBucket(60, burst=1, clock=ft.clock, sleeper=ft.sleep)
 
     async def go() -> None:
@@ -114,7 +116,6 @@ def test_token_bucket_respects_rate() -> None:
 
 def test_two_keys_double_the_rhythm() -> None:
     """The limit is per key: two keys must sustain twice the request rate."""
-    ft = FakeTime()
     one = FakeTime()
     one_key = make_pool(["k1"], one, rpm=60, burst=1)
     for _ in range(4):
@@ -149,7 +150,9 @@ def test_rate_limited_key_cools_down_and_is_skipped() -> None:
         return k.id
 
     assert asyncio.run(next_key()) != first.id
-    assert first.cooldown_until == pytest.approx(ft.now + 30.0, abs=1e-6) or first.disabled
+    assert (
+        first.cooldown_until == pytest.approx(ft.now + 30.0, abs=1e-6) or first.disabled
+    )
 
 
 def test_quarantined_key_disables_pool_when_last() -> None:
@@ -230,9 +233,15 @@ def test_dispatcher_is_idempotent_across_restarts(tmp_path) -> None:
         return Response(SPECIALIST_TEXT, {"total_tokens": 50})
 
     reqs = [Request(prompt="same", model="m")]
-    run(Dispatcher(transport, Ledger(led_path, fsync=False), make_pool(["k"], ft, 6000)).run(reqs))
+    run(
+        Dispatcher(
+            transport, Ledger(led_path, fsync=False), make_pool(["k"], ft, 6000)
+        ).run(reqs)
+    )
     stats = run(
-        Dispatcher(transport, Ledger(led_path, fsync=False), make_pool(["k"], ft, 6000)).run(reqs)
+        Dispatcher(
+            transport, Ledger(led_path, fsync=False), make_pool(["k"], ft, 6000)
+        ).run(reqs)
     )
     assert calls["n"] == 1, "a completed request must never be re-sent"
     assert stats.skipped_done == 1
@@ -299,7 +308,9 @@ def test_fatal_error_is_not_retried(tmp_path) -> None:
         calls["n"] += 1
         raise Fatal("400 bad request")
 
-    d = Dispatcher(transport, Ledger(tmp_path / "l.jsonl", fsync=False), make_pool(["k"], ft, 6000))
+    d = Dispatcher(
+        transport, Ledger(tmp_path / "l.jsonl", fsync=False), make_pool(["k"], ft, 6000)
+    )
     run(d.run([Request(prompt="p", model="m")]))
     assert calls["n"] == 1
 
@@ -312,7 +323,9 @@ def test_budget_ceiling_blocks_sending(tmp_path) -> None:
         return Response(SPECIALIST_TEXT, {"total_tokens": 10})
 
     led = Ledger(tmp_path / "l.jsonl", fsync=False)
-    d = Dispatcher(transport, led, make_pool(["k"], ft, 6000), budget=budget, concurrency=1)
+    d = Dispatcher(
+        transport, led, make_pool(["k"], ft, 6000), budget=budget, concurrency=1
+    )
     stats = run(d.run([Request(prompt=f"p{i}", model="m") for i in range(3)]))
     assert stats.ok == 1
     assert stats.failed == 2
@@ -389,7 +402,9 @@ def test_echo_detector_catches_the_kitab_failure_mode() -> None:
         "maintaining the right-to-left direction:"
     )
     assert find_echo(leak), "the published KITAB-Bench GT leak must be caught"
-    assert find_echo("متن زیر را در نظر بگیرید") == [] or find_echo("متن زیر را در نظر بگیرید")
+    assert find_echo("متن زیر را در نظر بگیرید") == [] or find_echo(
+        "متن زیر را در نظر بگیرید"
+    )
 
 
 def test_terminology_density_counts_distinct_terms() -> None:
@@ -404,9 +419,29 @@ def test_gate_rejects_lay_explainer_accepts_specialist() -> None:
     bad = "به زبان ساده، در دنیای امروز این بیماری اهمیت زیادی دارد. تصور کنید..."
     good = SPECIALIST_TEXT
     lex = ["اتیولوژی", "تشخیص افتراقی", "پروگنوز", "حساسیت و ویژگی", "عود"]
-    r_bad = evaluate(bad, banned=["به زبان ساده", "در دنیای امروز", "اهمیت زیادی دارد"], lexicon=lex)
+    r_bad = evaluate(
+        bad, banned=["به زبان ساده", "در دنیای امروز", "اهمیت زیادی دارد"], lexicon=lex
+    )
     r_good = evaluate(good, lexicon=lex, min_term_density=4)
     assert r_bad.verdict == "reject"
     assert "banned_lay_pattern" in r_bad.reasons
     assert r_good.verdict == "accept"
     assert r_good.term_density >= 4
+
+
+def test_body_text_strips_tables_and_headings() -> None:
+    """R5 must measure prose: a correct invoice is not a 10-word-sentence document."""
+    from persdocbench.content.gates import body_text
+
+    page = (
+        "**جدول اقلام**\n"
+        "| ردیف | شرح | مبلغ |\n"
+        "|------|-----|------|\n"
+        "| ۱ | کابل | ۲۵۰۰۰ |\n"
+        "\n"
+        "این بند شرایط پرداخت را در بازه سی روزه تعیین می‌کند و "
+        "در صورت تأخیر، وجه التزام مطابق بند چهارم اعمال می‌شود.\n"
+    )
+    out = body_text(page)
+    assert "|" not in out
+    assert "شرایط پرداخت" in out

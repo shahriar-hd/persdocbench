@@ -26,6 +26,7 @@ non-JSON body / no choices           ``Retryable(kind="parse")``
 dispatcher gives up on the request; the probe records them separately so a
 model catalogue can be triaged without decoding log strings.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,7 +42,9 @@ from persdocbench.content.dispatcher import AuthError, Fatal, Request, Response,
 from persdocbench.content.keys import Key
 
 # (status, headers, body_bytes) — the only thing tests have to fake.
-HttpCall = Callable[[str, str, dict[str, str], bytes | None, float], "tuple[int, dict[str, str], bytes]"]
+HttpCall = Callable[
+    [str, str, dict[str, str], bytes | None, float], "tuple[int, dict[str, str], bytes]"
+]
 
 
 class ModelUnavailable(Fatal):
@@ -106,6 +109,24 @@ def _urllib_http(
         raise ConnectionError(str(reason)) from exc
 
 
+def as_retryable(exc: BaseException, *, what: str = "") -> BaseException:
+    """Map a transport-level failure to the dispatcher's retry taxonomy.
+
+    A read timeout surfaces as a bare ``TimeoutError`` from ``urlopen``/``read``,
+    *before* any HTTP status exists, so ``classify()`` never sees it. Observed in
+    production on a 1,400-token generation: the exception escaped the transport and
+    killed the whole batch instead of cooling the key down and retrying. Connection
+    resets and DNS failures behave the same way.
+    """
+    if isinstance(exc, (Retryable, Fatal)):
+        return exc
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return Retryable(f"timeout{': ' + what if what else ''}: {exc}")
+    if isinstance(exc, (ConnectionError, urllib.error.URLError, OSError)):
+        return Retryable(f"transport{': ' + what if what else ''}: {exc}")
+    return exc
+
+
 def _retry_after(headers: dict[str, str], default: float = 60.0) -> float:
     for k, v in headers.items():
         if k.lower() == "retry-after":
@@ -131,7 +152,13 @@ def _error_text(body: bytes, limit: int = 400) -> str:
     return json.dumps(data)[:limit]
 
 
-_NOT_FOUND_HINTS = ("model not found", "unknown model", "does not exist", "not a valid model", "no such model")
+_NOT_FOUND_HINTS = (
+    "model not found",
+    "unknown model",
+    "does not exist",
+    "not a valid model",
+    "no such model",
+)
 # "your key is fine, this model is not yours" — must never quarantine the key.
 _ENTITLEMENT_HINTS = (
     "authorization failed",
@@ -176,7 +203,9 @@ def classify(status: int, headers: dict[str, str], body: bytes) -> Exception | N
     """Map a non-2xx response to the exception the dispatcher should see."""
     text = _error_text(body).lower()
     if status == 429:
-        return Retryable(f"429: {text}", retry_after=_retry_after(headers), rate_limited=True)
+        return Retryable(
+            f"429: {text}", retry_after=_retry_after(headers), rate_limited=True
+        )
     if status in (401, 403):
         if any(h in text for h in _ENTITLEMENT_HINTS):
             return ModelForbidden(f"{status}: {text}")
@@ -191,7 +220,9 @@ def classify(status: int, headers: dict[str, str], body: bytes) -> Exception | N
             return ParamRejected(f"{status}: {text}", param=param)
         return Fatal(f"{status}: {text}")
     if status in (408, 409, 425, 500, 502, 503, 504):
-        return Retryable(f"{status}: {text}", retry_after=_retry_after(headers, default=5.0))
+        return Retryable(
+            f"{status}: {text}", retry_after=_retry_after(headers, default=5.0)
+        )
     if 500 <= status < 600:
         return Retryable(f"{status}: {text}", retry_after=5.0)
     return Fatal(f"{status}: {text}")
@@ -202,7 +233,7 @@ class NvidiaClient:
     """Transport for the dispatcher, plus catalogue discovery."""
 
     base_url: str = "https://integrate.api.nvidia.com/v1"
-    timeout: float = 120.0
+    timeout: float = 180.0
     http: HttpCall = field(default=_urllib_http, repr=False)
     last_usage: Usage = field(default_factory=Usage, init=False)
 
@@ -215,7 +246,12 @@ class NvidiaClient:
 
     def list_models(self, key: Key, *, timeout: float = 30.0) -> list[dict[str, object]]:
         url = f"{self.base_url.rstrip('/')}/models"
-        status, headers, body = self.http("GET", url, self._headers(key), None, timeout)
+        try:
+            status, headers, body = self.http(
+                "GET", url, self._headers(key), None, timeout
+            )
+        except Exception as exc:
+            raise as_retryable(exc, what=f"GET {url}") from exc
         if not 200 <= status < 300:
             err = classify(status, headers, body) or Fatal(str(status))
             raise err
@@ -235,12 +271,25 @@ class NvidiaClient:
         params = dict(params or {})
         messages = params.pop("messages", None) or [{"role": "user", "content": prompt}]
         payload: dict[str, object] = {"model": model, "messages": messages}
-        for name in ("temperature", "top_p", "max_tokens", "stop", "seed", "presence_penalty", "frequency_penalty"):
+        for name in (
+            "temperature",
+            "top_p",
+            "max_tokens",
+            "stop",
+            "seed",
+            "presence_penalty",
+            "frequency_penalty",
+        ):
             if name in params and params[name] is not None:
                 payload[name] = params[name]
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         url = f"{self.base_url.rstrip('/')}/chat/completions"
-        status, headers, raw = self.http("POST", url, self._headers(key), body, timeout or self.timeout)
+        try:
+            status, headers, raw = self.http(
+                "POST", url, self._headers(key), body, timeout or self.timeout
+            )
+        except Exception as exc:
+            raise as_retryable(exc, what=f"POST {url} model={model}") from exc
         if not 200 <= status < 300:
             err = classify(status, headers, raw) or Fatal(str(status))
             raise err
@@ -268,7 +317,9 @@ class NvidiaClient:
         )
         return text, self.last_usage
 
-    async def __call__(self, spec: Request, key: Key, timeout: float | None = None) -> Response:
+    async def __call__(
+        self, spec: Request, key: Key, timeout: float | None = None
+    ) -> Response:
         text, usage = await asyncio.to_thread(
             self.complete_sync,
             key=key,

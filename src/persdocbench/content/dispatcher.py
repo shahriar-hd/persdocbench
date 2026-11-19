@@ -18,6 +18,7 @@ Four invariants the dispatcher enforces:
 4. **Every outcome is recorded** — success, retry exhaustion and content
    rejection alike; a rejected generation is data about the generator.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,12 @@ from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from persdocbench.content.gates import GateReport, evaluate, normalize_for_storage, text_sha256
+from persdocbench.content.gates import (
+    GateReport,
+    evaluate,
+    normalize_for_storage,
+    text_sha256,
+)
 from persdocbench.content.keys import Key, KeyPool
 from persdocbench.content.ledger import Ledger, request_id
 from persdocbench.content.ratelimit import Budget
@@ -56,7 +62,7 @@ class AuthError(Fatal):
 
 
 class Transport(Protocol):
-    def __call__(self, spec: "Request", key: Key) -> Awaitable["Response"]: ...
+    def __call__(self, spec: Request, key: Key) -> Awaitable[Response]: ...
 
 
 @dataclass(frozen=True)
@@ -125,6 +131,7 @@ class Dispatcher:
         min_numeric_density: float = 0.0,
         sentence_words_range: tuple[float, float] | None = None,
         on_ok: Callable[[Request, Response, GateReport], None] | None = None,
+        on_reject: Callable[[Request, Response, GateReport], None] | None = None,
     ) -> None:
         self.transport = transport
         self.ledger = ledger
@@ -142,6 +149,7 @@ class Dispatcher:
         self.min_numeric_density = min_numeric_density
         self.sentence_words_range = sentence_words_range
         self.on_ok = on_ok
+        self.on_reject = on_reject
         self.stats = Stats()
 
     # -- single request ----------------------------------------------------
@@ -178,13 +186,17 @@ class Dispatcher:
                 attempt -= 1
                 if not self.pool.active:
                     self.stats.failed += 1
-                    self.ledger.mark_failed(rid, attempts=attempt, error="all_keys_quarantined")
+                    self.ledger.mark_failed(
+                        rid, attempts=attempt, error="all_keys_quarantined"
+                    )
                     return
                 continue
             except Retryable as exc:
                 self.stats.retries += 1
                 if exc.rate_limited:
-                    self.pool.report_rate_limited(key, retry_after=exc.retry_after or 60.0)
+                    self.pool.report_rate_limited(
+                        key, retry_after=exc.retry_after or 60.0
+                    )
                 else:
                     self.pool.report_failure(key, str(exc))
                 if attempt >= self.max_attempts:
@@ -195,7 +207,7 @@ class Dispatcher:
                     return
                 delay = exc.retry_after or min(
                     self.backoff_cap,
-                    self.backoff_base ** attempt + self._rng.random(),
+                    self.backoff_base**attempt + self._rng.random(),
                 )
                 await self._sleep(delay)
                 continue
@@ -225,6 +237,8 @@ class Dispatcher:
                     reason=",".join(report.reasons),
                     extra={"gate": report.as_dict(), "meta": req.meta, "key": key.id},
                 )
+                if self.on_reject is not None:
+                    self.on_reject(req, Response(clean, resp.usage), report)
                 return
             self.stats.ok += 1
             self.stats.gate_reports[rid] = report

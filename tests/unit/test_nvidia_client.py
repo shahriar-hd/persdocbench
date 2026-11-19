@@ -1,7 +1,9 @@
 """Unit tests for the .env reader, the NVIDIA error taxonomy and the probe scoring."""
+
 from __future__ import annotations
 
 import json
+import urllib.error
 
 import pytest
 
@@ -25,6 +27,7 @@ from persdocbench.content.probe import (
     to_markdown,
 )
 from persdocbench.content.ratelimit import TokenBucket
+
 
 # ---------------------------------------------------------------------------
 # .env
@@ -113,7 +116,11 @@ def test_model_entitlement_403_is_not_an_auth_error() -> None:
 
 
 def test_invalid_key_is_still_an_auth_error() -> None:
-    for payload in (body("invalid api key"), body("authentication failed"), body("unauthorized")):
+    for payload in (
+        body("invalid api key"),
+        body("authentication failed"),
+        body("unauthorized"),
+    ):
         assert isinstance(classify(401, {}, payload), AuthError)
 
 
@@ -142,8 +149,10 @@ def make_key() -> Key:
     return Key(secret="nv_fake", bucket=TokenBucket(600, burst=10))
 
 
-def client_returning(status: int, payload: object, headers: dict[str, str] | None = None) -> NvidiaClient:
-    def http(method, url, hdrs, data, timeout):  # noqa: ANN001, ANN202
+def client_returning(
+    status: int, payload: object, headers: dict[str, str] | None = None
+) -> NvidiaClient:
+    def http(method, url, hdrs, data, timeout):
         raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         return status, headers or {}, raw
 
@@ -233,17 +242,42 @@ def test_persian_ratio_separates_languages() -> None:
 
 def test_rank_prefers_answering_persian_and_fast() -> None:
     rows = [
-        ProbeRow(model="good", probe="p", ok=True, latency_s=1.0, tok_per_s=80, persian_ratio=0.98,
-                 gate_verdict="accept"),
-        ProbeRow(model="slow_english", probe="p", ok=True, latency_s=40.0, tok_per_s=2, persian_ratio=0.1,
-                 gate_verdict="reject"),
-        ProbeRow(model="half_down", probe="p", ok=True, latency_s=2.0, tok_per_s=60, persian_ratio=0.9,
-                 gate_verdict="accept"),
-        ProbeRow(model="half_down", probe="q", ok=False, error_class="timeout", error="t"),
-        ProbeRow(model="dead", probe="p", ok=False, error_class="ModelUnavailable", error="404"),
+        ProbeRow(
+            model="good",
+            probe="p",
+            ok=True,
+            latency_s=1.0,
+            tok_per_s=80,
+            persian_ratio=0.98,
+            gate_verdict="accept",
+        ),
+        ProbeRow(
+            model="slow_english",
+            probe="p",
+            ok=True,
+            latency_s=40.0,
+            tok_per_s=2,
+            persian_ratio=0.1,
+            gate_verdict="reject",
+        ),
+        ProbeRow(
+            model="half_down",
+            probe="p",
+            ok=True,
+            latency_s=2.0,
+            tok_per_s=60,
+            persian_ratio=0.9,
+            gate_verdict="accept",
+        ),
+        ProbeRow(
+            model="half_down", probe="q", ok=False, error_class="timeout", error="t"
+        ),
+        ProbeRow(
+            model="dead", probe="p", ok=False, error_class="ModelUnavailable", error="404"
+        ),
     ]
     ranked, dead = rank(summarise(rows))
-    assert [s.model for s in ranked][0] == "good"
+    assert next(s.model for s in ranked) == "good"
     assert [s.model for s in ranked][-1] == "slow_english"
     assert [s.model for s in dead] == ["dead"]
     assert all(s.score > 0 for s in ranked)
@@ -251,10 +285,25 @@ def test_rank_prefers_answering_persian_and_fast() -> None:
 
 def test_summary_reports_units_and_gate_pass_rate() -> None:
     rows = [
-        ProbeRow(model="m", probe="p", ok=True, latency_s=2.0, tok_per_s=50, persian_ratio=1.0,
-                 gate_verdict="accept"),
-        ProbeRow(model="m", probe="q", ok=True, latency_s=4.0, tok_per_s=70, persian_ratio=0.8,
-                 gate_verdict="reject", gate_reasons=("banned_lay_pattern",)),
+        ProbeRow(
+            model="m",
+            probe="p",
+            ok=True,
+            latency_s=2.0,
+            tok_per_s=50,
+            persian_ratio=1.0,
+            gate_verdict="accept",
+        ),
+        ProbeRow(
+            model="m",
+            probe="q",
+            ok=True,
+            latency_s=4.0,
+            tok_per_s=70,
+            persian_ratio=0.8,
+            gate_verdict="reject",
+            gate_reasons=("banned_lay_pattern",),
+        ),
     ]
     (s,) = summarise(rows)
     assert s.probes == 2 and s.answered == 2
@@ -266,14 +315,21 @@ def test_summary_reports_units_and_gate_pass_rate() -> None:
 
 def test_markdown_lists_ranked_and_dead() -> None:
     ranked = [ModelSummary("a/b", 2, 2, 1.0, 1.0, 50.0, 0.99, 1.0, 0.0, score=0.9)]
-    dead = [ModelSummary("c/d", 2, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, error_classes=["ModelUnavailable"])]
+    dead = [
+        ModelSummary(
+            "c/d", 2, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, error_classes=["ModelUnavailable"]
+        )
+    ]
     md = to_markdown(ranked, dead, probe_count=2)
     assert "`a/b`" in md and "`c/d`" in md
     assert "Did not answer" in md
     assert "not comparable" in md
 
+
 def test_fixed_parameter_error_carries_the_param_name() -> None:
-    payload = body("validation: `top_p` is fixed at 0.95 for this model; received 0.9. omit `top_p` or set it to 0.95")
+    payload = body(
+        "validation: `top_p` is fixed at 0.95 for this model; received 0.9. omit `top_p` or set it to 0.95"
+    )
     err = classify(400, {}, payload)
     assert isinstance(err, ParamRejected)
     assert err.param == "top_p"
@@ -283,3 +339,52 @@ def test_fixed_parameter_error_carries_the_param_name() -> None:
 def test_unknown_parameter_error_is_plain_fatal() -> None:
     err = classify(400, {}, body("bad request: malformed json"))
     assert isinstance(err, Fatal) and not isinstance(err, ParamRejected)
+
+
+# ---------------------------------------------------------------------------
+# transport-level failures must reach the dispatcher's retry taxonomy
+# ---------------------------------------------------------------------------
+def test_read_timeout_is_retryable_not_fatal() -> None:
+    """Regression: a bare TimeoutError from urlopen escaped and killed a whole batch."""
+    from persdocbench.content.dispatcher import Retryable
+    from persdocbench.content.nvidia import as_retryable
+
+    mapped = as_retryable(TimeoutError("The read operation timed out"), what="POST x")
+    assert isinstance(mapped, Retryable)
+    assert "timeout" in str(mapped)
+
+
+def test_connection_reset_is_retryable() -> None:
+    from persdocbench.content.dispatcher import Retryable
+    from persdocbench.content.nvidia import as_retryable
+
+    assert isinstance(as_retryable(ConnectionResetError("reset")), Retryable)
+    assert isinstance(as_retryable(urllib.error.URLError("dns")), Retryable)
+
+
+def test_existing_taxonomy_exceptions_pass_through() -> None:
+    from persdocbench.content.dispatcher import Fatal, Retryable
+    from persdocbench.content.nvidia import as_retryable
+
+    already = Retryable("429")
+    assert as_retryable(already) is already
+    fatal = Fatal("nope")
+    assert as_retryable(fatal) is fatal
+
+
+def test_client_maps_timeout_from_injected_http() -> None:
+    """The mapping must sit in the client, not only in the helper."""
+    from persdocbench.content.dispatcher import Retryable
+    from persdocbench.content.nvidia import NvidiaClient
+
+    def boom(*_a, **_k):
+        raise TimeoutError("The read operation timed out")
+
+    client = NvidiaClient(http=boom)
+    key = KeyPool(["x" * 70]).keys[0]
+    try:
+        client.complete_sync(key=key, model="m", prompt="p")
+    except Retryable as exc:
+        assert "timeout" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("timeout was not mapped to Retryable")
