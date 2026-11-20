@@ -77,7 +77,29 @@ def test_banking_insurance_and_financial_are_not_renamed(cfg: dict) -> None:
     ids = {d["id"] for d in cfg["domains"]}
     assert "banking_insurance" in ids
     assert "financial_invoice" in ids
-    assert len(ids) == 10
+    assert len(ids) == 16  # D13-18 + magazine (2026-11-19) + poster/website/manga (D43)
+
+
+def test_no_domain_exceeds_the_administrative_cap(cfg: dict) -> None:
+    """D2 (final): equal weight per domain; no domain exceeds 12 %."""
+    ids = {d["id"] for d in cfg["domains"]}
+    assert len(ids) == 16
+    assert all(d["share"] <= 0.12 for d in cfg["domains"])
+    # D2 final (user 2026-11-19): the administrative+financial cluster no longer
+    # carries a 46 % weight — every domain has equal weight (1/16 = 0.0625).
+    cluster = {
+        "administrative_letter",
+        "form_government",
+        "banking_insurance",
+        "financial_invoice",
+    }
+    admin = sum(d["share"] for d in cfg["domains"] if d["id"] in cluster)
+    assert admin == pytest.approx(0.25, abs=0.01)
+    others = [d for d in cfg["domains"] if d["id"] not in cluster]
+    mean = sum(d["share"] for d in others) / len(others)
+    # equal weight: every non-cluster domain is within one page of the cluster rate
+    assert all(abs(d["share"] - mean) < 0.001 for d in others)
+    assert abs(sum(d["share"] for d in cfg["domains"]) - 1.0) < 1e-6
 
 
 def test_deferred_capabilities_stay_out_of_v1(cfg: dict) -> None:
@@ -102,7 +124,10 @@ def test_p2_is_300_pages_with_a_handwritten_subtrack(cfg: dict) -> None:
     assert p2["pages_core"] == 300
     assert sum(c["pages"] for c in p2["chains"]) == p2["images"] == 400
     assert p2["subtracks"] == {"printed_capture": 180, "handwriting_executed": 120}
-    assert p2["domain_quota_per_domain"] * 10 == p2["pages_core"]
+    # 16 domains x 18 = 288, remainder 12 -> 12 domains get a 19th page
+    q = p2["domain_quota_per_domain"]
+    ndom = len(cfg["domains"])
+    assert q * ndom <= p2["pages_core"] < (q + 1) * ndom
 
 
 def test_every_page_gets_a_human_pass_but_box_gt_stays_sampled(cfg: dict) -> None:
@@ -252,6 +277,57 @@ REGISTER_PATH = ROOT / "configs" / "content" / "register_v1.yaml"
 @pytest.fixture(scope="module")
 def register() -> dict:
     return yaml.safe_load(REGISTER_PATH.read_text(encoding="utf-8"))
+
+
+def test_d11_parallel_control_has_language_units(cfg: dict) -> None:
+    """D11 (answered): 100 parallel units split fa 40 / ar 60."""
+    pc = cfg["parallel_control"]
+    assert pc["units"] == 100
+    lu = pc["language_units"]
+    assert lu == {"fa": 40, "ar": 60}
+    assert sum(lu.values()) == pc["units"]
+
+
+def test_d37_image_embedded_vqa_contract(cfg: dict) -> None:
+    """D37 (answered): 300 pages carry an in-page figure; 60 items target it."""
+    ie = cfg["vqa"]["image_embedded"]
+    assert ie["pages_with_images"] == 300
+    assert ie["image_targeting_items"] == 60
+    assert ie["across_categories"] is True
+    assert ie["image_origin"] == "synthetic"
+    assert cfg["provenance"]["image_origin"] == "synthetic"
+    core = cfg["units"]["content_units_core"]
+    assert ie["pages_with_images"] == pytest.approx(0.2 * core, abs=1)
+
+
+def test_magazine_and_table_contracts_cover_the_user_feedback(
+    register: dict, cfg: dict
+) -> None:
+    """User feedback 2026-11-19: magazine missing; tables missing from samples."""
+    ids = {d["id"] for d in cfg["domains"]}
+    assert "magazine_article" in ids
+    mag = register["domains"]["magazine_article"]
+    assert mag["image_share"] >= 0.5  # magazines are image-heavy
+    assert "pull_quote" in mag["required_elements"]
+    for dom in (
+        "financial_invoice",
+        "banking_insurance",
+        "medical_record",
+        "technical_manual",
+        "educational",
+        "form_government",
+    ):
+        assert register["domains"][dom].get("tables_expected", 0) >= 1, dom
+    # D43: user asked for a wide type range — poster, website, manga must exist
+    # with their structural contracts (image-heavy posters, text-in-image manga).
+    poster = register["domains"]["poster"]
+    assert poster["image_share"] >= 0.5
+    assert {"headline", "call_to_action"} <= set(poster["required_elements"])
+    assert register["domains"]["website"]["image_share"] >= 0.2
+    manga = register["domains"]["manga"]
+    assert manga["image_share"] == 1.0  # every manga page is text-in-image
+    assert "dialogue_bubbles" in manga["required_elements"]
+    assert {"poster", "website", "manga"} <= ids
 
 
 def test_register_profile_exists(register: dict) -> None:

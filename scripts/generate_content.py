@@ -29,6 +29,7 @@ Usage
     python scripts/generate_content.py                      # planned batch
     python scripts/generate_content.py --resume             # continue an interrupted run
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,10 +40,11 @@ import os
 import random
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import yaml
 
@@ -54,9 +56,8 @@ from persdocbench.content.dotenv import load_dotenv  # noqa: E402
 from persdocbench.content.gates import (  # noqa: E402
     body_text,
     mean_words_per_sentence,
-    prose_lines,
-    normalize_for_storage,
     numeric_density,
+    prose_lines,
     terminology_density,
     text_sha256,
     word_count,
@@ -92,6 +93,7 @@ class Unit:
     register: str
     digit_style: str
     angle: str
+    image_slot: bool = False  # D37: unit text carries a [FIG: ...] placeholder
 
     def meta(self) -> dict[str, object]:
         return {
@@ -101,6 +103,7 @@ class Unit:
             "register": self.register,
             "digit_style": self.digit_style,
             "angle": self.angle,
+            "image_slot": self.image_slot,
         }
 
 
@@ -133,7 +136,8 @@ def build_plan(
     """Allocate ``count`` units across domain × subject_field, then assign registers."""
     rng = random.Random(seed)
     dom_shares = {
-        d: float(v.get("share", 1.0 / len(reg["domains"]))) for d, v in reg["domains"].items()
+        d: float(v.get("share", 1.0 / len(reg["domains"])))
+        for d, v in reg["domains"].items()
     }
     if domains:
         keep = set(domains)
@@ -170,7 +174,8 @@ def build_plan(
         # mismatch on the first live batch (a "book_literary" unit written about
         # pump calibration), which is a planning bug, not a model failure.
         eligible = {
-            f: w for f, w in sf_shares.items()
+            f: w
+            for f, w in sf_shares.items()
             if not reg["subject_fields"][f].get("host_domains")
             or domain in reg["subject_fields"][f]["host_domains"]
         } or sf_shares
@@ -192,10 +197,12 @@ def build_plan(
                     domain=domain,
                     subject_field=cells[i],
                     register=filled[i],
-                    digit_style=rng.choices(  # noqa: S311 - reproducible by seed
+                    digit_style=rng.choices(
                         list(digit_styles), weights=list(digit_styles.values())
                     )[0],
                     angle=rng.choice(angle_ids),
+                    image_slot=rng.random()
+                    < float(reg["domains"][domain].get("image_share", 0.0)),
                 )
             )
     units.sort(key=lambda u: u.unit_id)
@@ -212,7 +219,8 @@ def partition(units: list[Unit], *, workers: int, index: int) -> list[Unit]:
     if workers <= 1:
         return units
     return [
-        u for u in units
+        u
+        for u in units
         if int(hashlib.sha1(u.unit_id.encode()).hexdigest(), 16) % workers == index
     ]
 
@@ -226,7 +234,7 @@ def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[
     dlabel = prm["domain_labels"][unit.domain]
     rphrase = prm["register_phrasing"][unit.register]
     sf_label = prm["subject_field_labels"][unit.subject_field]
-    lex = [t for t in reg["subject_fields"][unit.subject_field].get("lexicon_seed", [])]
+    lex = list(reg["subject_fields"][unit.subject_field].get("lexicon_seed", []))
     banned = list(reg["banned_patterns"].get("fa", [])) + list(
         reg["banned_patterns"].get("definition_copulas_fa", [])
     )
@@ -241,6 +249,10 @@ def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[
         subject_field_fa=sf_label,
         register_fa=rphrase["register_fa"],
     )
+    figure_line = prm.get("figure_instruction", "") if unit.image_slot else ""
+    table_line = (
+        prm.get("table_instruction", "") if domain.get("tables_expected", 0) else ""
+    )
     user = prm["user"].format(
         domain_fa=dlabel["fa"],
         subject_field_fa=sf_label,
@@ -254,6 +266,8 @@ def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[
         numeric_policy_fa=prm["numeric_policy_phrasing"][domain["numeric_policy"]],
         digit_style_fa=prm["digit_styles"][unit.digit_style]["label_fa"],
         angle_fa=angle,
+        figure_line=figure_line,
+        table_line=table_line,
         lexicon_hint="، ".join(lex) if lex else "—",
         banned_hint="؛ ".join(banned[:14]),
     )
@@ -346,7 +360,6 @@ async def dispatch(
         "max_tokens": gen["generation"]["max_tokens"],
     }
     # register_v1 thresholds are the single source; generation_v1 points at them
-    checks = reg["checks"]
     banned = list(reg["banned_patterns"]["fa"]) + list(
         reg["banned_patterns"]["definition_copulas_fa"]
     )
@@ -356,10 +369,13 @@ async def dispatch(
         return Request(
             prompt=user,
             model=model,
-            params={**params, "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ]},
+            params={
+                **params,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            },
             variant=unit.unit_id,
             meta={**unit.meta(), "system_sha256": text_sha256(system)},
         )
@@ -379,6 +395,7 @@ async def dispatch(
                 "register": req.meta["register"],
                 "digit_style": req.meta["digit_style"],
                 "angle": req.meta["angle"],
+                "image_slot": req.meta["image_slot"],
                 "reason": ",".join(report.reasons),
                 "gate": report.as_dict(),
                 "text": resp.text,
@@ -401,6 +418,7 @@ async def dispatch(
                 "register": req.meta["register"],
                 "digit_style": req.meta["digit_style"],
                 "angle": req.meta["angle"],
+                "image_slot": req.meta["image_slot"],
                 "text": resp.text,
                 "text_sha256": text_sha256(resp.text),
                 "words": wc,
@@ -457,9 +475,19 @@ async def dispatch(
             if rec.status.value in ("ok", "rejected"):
                 continue  # answered, or answered badly: never falls through
             err = rec.error or ""
-            if any(name in err for name in ("ModelForbidden", "ModelUnavailable",
-                                            "ModelUnsupported", "ParamRejected",
-                                            "fatal:", "404", "400", "422")):
+            if any(
+                name in err
+                for name in (
+                    "ModelForbidden",
+                    "ModelUnavailable",
+                    "ModelUnsupported",
+                    "ParamRejected",
+                    "fatal:",
+                    "404",
+                    "400",
+                    "422",
+                )
+            ):
                 next_remaining[unit.unit_id] = unit
             else:
                 # transport failure after max_attempts: keep for a later --resume
@@ -476,8 +504,9 @@ async def dispatch(
     }
 
 
-def recompute_metrics(record: dict[str, object], reg: dict[str, Any],
-                      prm: dict[str, Any]) -> dict[str, object]:
+def recompute_metrics(
+    record: dict[str, object], reg: dict[str, Any], prm: dict[str, Any]
+) -> dict[str, object]:
     """Re-measure one accepted record against its *own* register and lexicon.
 
     The dispatcher runs one gate for a whole batch, so it cannot know which subject
@@ -503,8 +532,11 @@ def recompute_metrics(record: dict[str, object], reg: dict[str, Any],
     return record
 
 
-def apply_register_thresholds(records: list[dict[str, object]], reg: dict[str, Any],
-                              prm: dict[str, Any] | None = None) -> None:
+def apply_register_thresholds(
+    records: list[dict[str, object]],
+    reg: dict[str, Any],
+    prm: dict[str, Any] | None = None,
+) -> None:
     """Stamp each accepted record with the *soft* threshold verdict for its register.
 
     R1/R3/R5 are reported, not enforced: a threshold nobody validated must route a
@@ -540,28 +572,52 @@ def apply_register_thresholds(records: list[dict[str, object]], reg: dict[str, A
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--count", type=int, default=None,
-                    help="units to plan (default: units.content_units_core from the spec)")
-    ap.add_argument("--limit", type=int, default=None, help="hard cap on dispatched units")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        help="units to plan (default: units.content_units_core from the spec)",
+    )
+    ap.add_argument(
+        "--limit", type=int, default=None, help="hard cap on dispatched units"
+    )
     ap.add_argument("--domain", action="append", help="restrict to a domain (repeatable)")
-    ap.add_argument("--subject-field", action="append", help="restrict to a subject field")
+    ap.add_argument(
+        "--subject-field", action="append", help="restrict to a subject field"
+    )
     ap.add_argument("--register", default=None, help="force one register tier")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--model", default=None, help="override the candidate list")
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--max-attempts", type=int, default=4)
     ap.add_argument("--out", default=None, help="run directory (default: stamped)")
-    ap.add_argument("--resume", action="store_true", help="skip requests already terminal")
-    ap.add_argument("--request-timeout", type=float, default=180.0,
-                    help="per-request read timeout in seconds (default 180)")
-    ap.add_argument("--rpm", type=float, default=None,
-                    help="override requests/minute/key (the service uses this)")
-    ap.add_argument("--workers", type=int, default=1,
-                    help="total workers in this run; with --worker-index, plan a slice")
-    ap.add_argument("--worker-index", type=int, default=0,
-                    help="0-based index of this worker")
+    ap.add_argument(
+        "--resume", action="store_true", help="skip requests already terminal"
+    )
+    ap.add_argument(
+        "--request-timeout",
+        type=float,
+        default=180.0,
+        help="per-request read timeout in seconds (default 180)",
+    )
+    ap.add_argument(
+        "--rpm",
+        type=float,
+        default=None,
+        help="override requests/minute/key (the service uses this)",
+    )
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="total workers in this run; with --worker-index, plan a slice",
+    )
+    ap.add_argument(
+        "--worker-index", type=int, default=0, help="0-based index of this worker"
+    )
     ap.add_argument("--dry-run", action="store_true", help="write the plan, send nothing")
     args = ap.parse_args(argv)
 
@@ -572,15 +628,22 @@ def main(argv: list[str] | None = None) -> int:
     count = args.count
     if count is None:
         bench = yaml.safe_load(
-            (ROOT / "configs" / "benchmark" / "benchmark_v1.yaml").read_text(encoding="utf-8")
+            (ROOT / "configs" / "benchmark" / "benchmark_v1.yaml").read_text(
+                encoding="utf-8"
+            )
         )
         count = int(bench["units"]["content_units_core"])
     if args.limit:
         count = min(count, args.limit)
 
     units = build_plan(
-        count=count, seed=args.seed, reg=reg, prm=prm,
-        domains=args.domain, subject_fields=args.subject_field, register=args.register,
+        count=count,
+        seed=args.seed,
+        reg=reg,
+        prm=prm,
+        domains=args.domain,
+        subject_fields=args.subject_field,
+        register=args.register,
     )
     if args.workers > 1:
         if not 0 <= args.worker_index < args.workers:
@@ -601,13 +664,15 @@ def main(argv: list[str] | None = None) -> int:
     plan_rows = []
     for unit in units:
         system, user = build_prompt(unit, reg, prm)
-        plan_rows.append({
-            **unit.meta(),
-            "model_candidates": models,
-            "system_sha256": text_sha256(system),
-            "user_sha256": text_sha256(user),
-            "prompt_chars": len(system) + len(user),
-        })
+        plan_rows.append(
+            {
+                **unit.meta(),
+                "model_candidates": models,
+                "system_sha256": text_sha256(system),
+                "user_sha256": text_sha256(user),
+                "prompt_chars": len(system) + len(user),
+            }
+        )
     with (out_dir / "requests.jsonl").open("w", encoding="utf-8") as fh:
         for row in plan_rows:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -616,6 +681,10 @@ def main(argv: list[str] | None = None) -> int:
     by_register = Counter(u.register for u in units)
     by_field = Counter(u.subject_field for u in units)
     by_digits = Counter(u.digit_style for u in units)
+    by_image = Counter(bool(u.image_slot) for u in units)
+    by_table = Counter(
+        bool(reg["domains"][u.domain].get("tables_expected", 0)) for u in units
+    )
     print(f"run dir     : {out_dir.relative_to(ROOT)}")
     print(f"units       : {len(units)}  (seed {args.seed})")
     print(f"models      : {', '.join(models)}")
@@ -623,31 +692,45 @@ def main(argv: list[str] | None = None) -> int:
     print(f"registers   : {dict(sorted(by_register.items()))}")
     print(f"fields      : {dict(sorted(by_field.items()))}")
     print(f"digit style : {dict(sorted(by_digits.items()))}")
+    print(f"image slots : {dict(sorted(by_image.items()))}  (D37)")
+    print(f"tbl expected: {dict(sorted(by_table.items()))}  (tables_expected)")
 
     if args.dry_run:
-        sample = plan_rows[0]
         sysmsg, usermsg = build_prompt(units[0], reg, prm)
         print("\n--- sample prompt (system) ---")
         print(sysmsg.strip())
         print("\n--- sample prompt (user) ---")
         print(usermsg.strip())
-        print(f"\nplan written: {(out_dir / 'requests.jsonl').relative_to(ROOT)} "
-              f"({len(plan_rows)} rows)")
+        print(
+            f"\nplan written: {(out_dir / 'requests.jsonl').relative_to(ROOT)} "
+            f"({len(plan_rows)} rows)"
+        )
         return 0
 
     _read_env()
     raw = os.environ.get(gen["provider"]["key_env"])
     pool_keys = parse_keys(raw)
     if not pool_keys:
-        raise SystemExit(f"{gen['provider']['key_env']} is empty: export it or use --dry-run")
-    print(f"keys        : {len(pool_keys)} "
-          f"(fixed capacity {len(pool_keys) * gen['provider']['requests_per_minute_per_key']:.0f} req/min)")
+        raise SystemExit(
+            f"{gen['provider']['key_env']} is empty: export it or use --dry-run"
+        )
+    print(
+        f"keys        : {len(pool_keys)} "
+        f"(fixed capacity {len(pool_keys) * gen['provider']['requests_per_minute_per_key']:.0f} req/min)"
+    )
 
     result = asyncio.run(
         dispatch(
-            units=units, models=models, gen=gen, reg=reg, prm=prm, out_dir=out_dir,
-            concurrency=args.concurrency, max_attempts=args.max_attempts,
-            resume=args.resume, request_timeout=args.request_timeout,
+            units=units,
+            models=models,
+            gen=gen,
+            reg=reg,
+            prm=prm,
+            out_dir=out_dir,
+            concurrency=args.concurrency,
+            max_attempts=args.max_attempts,
+            resume=args.resume,
+            request_timeout=args.request_timeout,
             rpm_override=args.rpm,
         )
     )
@@ -692,13 +775,15 @@ def main(argv: list[str] | None = None) -> int:
         },
         "provenance": "synthetic_native",
         "note": "Rejects are retained deliberately. A high reject rate is a finding about "
-                "the generator, not a batch to be silently retried away.",
+        "the generator, not a batch to be silently retried away.",
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     for rec in accepted:
-        with (out_dir / "shards" / "accepted-with-flags.jsonl").open("a", encoding="utf-8") as fh:
+        with (out_dir / "shards" / "accepted-with-flags.jsonl").open(
+            "a", encoding="utf-8"
+        ) as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
     print(f"\naccepted    : {len(accepted)}")
@@ -708,8 +793,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"ledger      : {result['ledger']}")
     print(f"manifest    : {(out_dir / 'manifest.json').relative_to(ROOT)}")
     for rnd in result["rounds"]:
-        print(f"  round {rnd['model']}: sent {rnd['sent']} ok {rnd['ok']} "
-              f"rejected {rnd['rejected']} failed {rnd['failed']} retries {rnd['retries']}")
+        print(
+            f"  round {rnd['model']}: sent {rnd['sent']} ok {rnd['ok']} "
+            f"rejected {rnd['rejected']} failed {rnd['failed']} retries {rnd['retries']}"
+        )
     return 0
 
 

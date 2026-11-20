@@ -30,21 +30,31 @@ units:
   split_unit: document            # never page
 
 domains:
-  # share must sum to 1.0 over pages_core
-  - {id: administrative_letter,  pages: 180, share: 0.12, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
-  - {id: form_government,        pages: 180, share: 0.12, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
-  - {id: banking_insurance,      pages: 165, share: 0.11, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
-  - {id: financial_invoice,      pages: 165, share: 0.11, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
-  - {id: academic_paper,         pages: 150, share: 0.10, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
-  - {id: educational,            pages: 165, share: 0.11, difficulty: {easy: 0.35, medium: 0.50, hard: 0.15}}
-  - {id: legal_contract,         pages: 135, share: 0.09, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
-  - {id: book_literary,          pages: 135, share: 0.09, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
-  - {id: news_web,               pages: 135, share: 0.09, difficulty: {easy: 0.40, medium: 0.45, hard: 0.15}}
-  - {id: technical_manual,       pages:  90, share: 0.06, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
-
+  # D2 (final, user 2026-11-19): **equal weight per domain** — the earlier 46 %
+  # administrative+financial aggregate and the user's ~20 % counter-suggestion were
+  # both dropped ("my 20 % was a random number"). 1,500 / 16 = 93.75, so twelve
+  # domains get 94 pages and four get 93. D13-18 added medical_record and
+  # court_judgment; 2026-11-19 added magazine_article, then poster/website/manga.
+  # Shares are exact fractions of 1500 so validator arithmetic stays exact.
+  - {id: administrative_letter, pages:  93, share: 0.062, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: form_government,       pages:  93, share: 0.062, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+  - {id: banking_insurance,     pages:  93, share: 0.062, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
+  - {id: financial_invoice,     pages:  93, share: 0.062, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
+  - {id: academic_paper,        pages:  94, share: 0.0626667, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: educational,           pages:  94, share: 0.0626667, difficulty: {easy: 0.35, medium: 0.50, hard: 0.15}}
+  - {id: legal_contract,        pages:  94, share: 0.0626667, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+  - {id: book_literary,         pages:  94, share: 0.0626667, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: news_web,              pages:  94, share: 0.0626667, difficulty: {easy: 0.40, medium: 0.45, hard: 0.15}}
+  - {id: technical_manual,      pages:  94, share: 0.0626667, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+  - {id: medical_record,        pages:  94, share: 0.0626667, difficulty: {easy: 0.25, medium: 0.50, hard: 0.25}}
+  - {id: court_judgment,        pages:  94, share: 0.0626667, difficulty: {easy: 0.20, medium: 0.50, hard: 0.30}}
+  - {id: magazine_article,      pages:  94, share: 0.0626667, difficulty: {easy: 0.30, medium: 0.45, hard: 0.25}}
+  - {id: poster,                pages:  94, share: 0.0626667, difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}}
+  - {id: website,               pages:  94, share: 0.0626667, difficulty: {easy: 0.40, medium: 0.45, hard: 0.15}}
+  - {id: manga,                 pages:  94, share: 0.0626667, difficulty: {easy: 0.40, medium: 0.45, hard: 0.15}}
 domain_groups:
   administrative_cluster: [administrative_letter, form_government, banking_insurance, financial_invoice]
-  administrative_cluster_share_target: 0.46    # approved direction (T3)
+  administrative_cluster_share_target: 0.25    # D2 final: 4/16 domains, equal weight
 
 language_mix:
   persian_only:                {pages: 1260, share: 0.84}
@@ -59,14 +69,17 @@ script_style_mix:
   handwriting_executed: 120   # D12/D34
 
 layout_families:
-  - {id: single_column_letter, pages: 250, columns: 1}
+  - {id: single_column_letter, pages: 205, columns: 1}
   - {id: form_grid,            pages: 200, columns: 2}
-  - {id: two_column,           pages: 250, columns: 2}
+  - {id: two_column,           pages: 205, columns: 2}
   - {id: three_column_news,    pages: 150, columns: 3}
-  - {id: table_dominant,       pages: 250, columns: 1}
+  - {id: table_dominant,       pages: 205, columns: 1}
   - {id: academic_two_column,  pages: 150, columns: 2}
   - {id: book_page,            pages: 150, columns: 1}
   - {id: mixed_banner,         pages: 100, columns: 2}
+  - {id: poster_layout,        pages:  45, columns: 1}
+  - {id: website_layout,       pages:  45, columns: 2}
+  - {id: manga_page,           pages:  45, columns: 1}
 
 page_sizes:
   A4_portrait:  0.78
@@ -106,7 +119,7 @@ conditions:
     images: 400
     acquisition_path: print_capture
     content_origin: synthetic_native
-    domain_quota_per_domain: 30
+    domain_quota_per_domain: 18   # 16 domains x 18 = 288 + 12 remainder
     difficulty: {easy: 0.30, medium: 0.50, hard: 0.20}
     subtracks:                   # D4/D12: the 300 pages are split across two executions
       printed_capture: 180       # printed on paper, then photographed
@@ -119,6 +132,7 @@ conditions:
 parallel_control:
   units: 100
   languages: [fa, ar]
+  language_units: {fa: 40, ar: 60}   # D11 (answered 2026-11-19): Persian leg added
   conditions: [P0, P1a, P1b]
   images: 300
   included_in_headline: false
@@ -232,11 +246,22 @@ vqa:
     layout_reading:     300
     unanswerable:       300
     cross_page:         150
+  image_embedded:                # D37 (new, answered 2026-11-19)
+    pages_with_images: 300       # ~20 % of the 1500 core pages carry an in-page figure
+    image_targeting_items: 60    # items whose answer requires reading the image itself
+    across_categories: true      # the 300 pages feed every category, not one new one
+    image_origin: synthetic      # seeded charts/figures; provenance stays synthetic_native
+    note: >
+      The figure is generated by the renderer from the unit's [FIG: caption]
+      placeholder and is always related to the unit's subject (a pump-calibration
+      page gets a torque/flow chart, never a decorative stock photo). 60 of the
+      3000 items are image-targeting: answering requires reading the figure.
 
 provenance:
   content_origin: {synthetic_native: 1.0}
   acquisition_paths: [render, sim_degraded, print_capture]
   third_party_content: none
+  image_origin: synthetic         # D37: figures are seeded synthetic, never scraped
   note: >
     P2 pages are synthetic_native content captured physically. They must be described as
     "realistically captured synthetic pages", never as real documents.

@@ -16,6 +16,7 @@ Artefacts (git-ignored): ``artifacts/probes/<UTC-stamp>/``
     ranking.md      human-readable ranked table
     outputs/        accepted probe texts, one file per model
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,7 +25,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,7 +92,7 @@ def load_banned() -> list[str]:
     """Banned lay patterns from the register profile, if PyYAML is available."""
     path = ROOT / "configs" / "content" / "register_v1.yaml"
     try:
-        import yaml  # noqa: PLC0415
+        import yaml
     except ModuleNotFoundError:
         return []
     if not path.is_file():
@@ -108,7 +109,7 @@ def load_banned() -> list[str]:
 def load_lexicon() -> list[str]:
     path = ROOT / "configs" / "content" / "register_v1.yaml"
     try:
-        import yaml  # noqa: PLC0415
+        import yaml
     except ModuleNotFoundError:
         return []
     if not path.is_file():
@@ -145,8 +146,15 @@ async def probe_model(
             try:
                 key = await pool.acquire()
             except RuntimeError as exc:
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="no_keys", error=str(exc)))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="no_keys",
+                        error=str(exc),
+                    )
+                )
                 return rows
             started = time.perf_counter()
             try:
@@ -159,8 +167,15 @@ async def probe_model(
                     timeout=timeout,
                 )
             except AuthError as exc:
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="auth", error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="auth",
+                        error=str(exc)[:300],
+                    )
+                )
                 return rows
             except ParamRejected as exc:
                 # Model-level parameter policy: drop the offending key and resend.
@@ -168,8 +183,15 @@ async def probe_model(
                     dropped.append(exc.param)
                     params.pop(exc.param, None)
                     continue
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="param_rejected", error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="param_rejected",
+                        error=str(exc)[:300],
+                    )
+                )
                 break
             except ModelForbidden as exc:
                 # Observed to be intermittent, not a permanent entitlement answer:
@@ -179,12 +201,26 @@ async def probe_model(
                     forbidden_tries += 1
                     await asyncio.sleep(2.0 * forbidden_tries)
                     continue
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="forbidden", error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="forbidden",
+                        error=str(exc)[:300],
+                    )
+                )
                 return rows
             except (ModelUnavailable, ModelUnsupported) as exc:
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class=type(exc).__name__, error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class=type(exc).__name__,
+                        error=str(exc)[:300],
+                    )
+                )
                 return rows
             except Retryable as exc:
                 # A reasoning model can spend the whole budget on hidden tokens and
@@ -195,22 +231,44 @@ async def probe_model(
                     params["max_tokens"] = int(params.get("max_tokens", 320)) * 3
                     continue
                 if attempt < max_attempts:
-                    await asyncio.sleep(exc.retry_after or min(30.0, 2.0 ** attempt))
+                    await asyncio.sleep(exc.retry_after or min(30.0, 2.0**attempt))
                     continue
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="retry_exhausted", error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="retry_exhausted",
+                        error=str(exc)[:300],
+                    )
+                )
                 break
             except Fatal as exc:
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="Fatal", error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="Fatal",
+                        error=str(exc)[:300],
+                    )
+                )
                 break
             except (TimeoutError, ConnectionError) as exc:
                 if attempt < max_attempts:
-                    await asyncio.sleep(min(30.0, 2.0 ** attempt))
+                    await asyncio.sleep(min(30.0, 2.0**attempt))
                     continue
-                rows.append(ProbeRow(model=model, probe=str(probe["id"]), ok=False,
-                                     error_class="timeout" if isinstance(exc, TimeoutError) else "network",
-                                     error=str(exc)[:300]))
+                rows.append(
+                    ProbeRow(
+                        model=model,
+                        probe=str(probe["id"]),
+                        ok=False,
+                        error_class="timeout"
+                        if isinstance(exc, TimeoutError)
+                        else "network",
+                        error=str(exc)[:300],
+                    )
+                )
                 break
 
             elapsed = max(time.perf_counter() - started, 1e-6)
@@ -223,7 +281,9 @@ async def probe_model(
                 ok=True,
                 latency_s=elapsed,
                 completion_tokens=usage.completion_tokens,
-                tok_per_s=(usage.completion_tokens / elapsed) if usage.completion_tokens else 0.0,
+                tok_per_s=(usage.completion_tokens / elapsed)
+                if usage.completion_tokens
+                else 0.0,
                 chars=len(text),
                 words=words,
                 persian_ratio=persian_ratio(text),
@@ -234,9 +294,13 @@ async def probe_model(
             if out_dir is not None:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 safe = model.replace("/", "__")
-                (out_dir / f"{safe}__{probe['id']}.txt").write_text(text + "\n", encoding="utf-8")
+                (out_dir / f"{safe}__{probe['id']}.txt").write_text(
+                    text + "\n", encoding="utf-8"
+                )
             if hits:
-                row.gate_reasons = tuple(list(row.gate_reasons) + [f"banned:{h}" for h in hits])
+                row.gate_reasons = tuple(
+                    list(row.gate_reasons) + [f"banned:{h}" for h in hits]
+                )
             break
     return rows
 
@@ -252,10 +316,12 @@ async def run(args: argparse.Namespace) -> int:
         base_url=os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
         timeout=args.timeout,
     )
-    print(f"keys: {len(pool.keys)} (fingerprints {[k.id for k in pool.keys]}), "
-          f"{rate:g} req/min/key => {pool.capacity_per_minute:g} req/min total")
+    print(
+        f"keys: {len(pool.keys)} (fingerprints {[k.id for k in pool.keys]}), "
+        f"{rate:g} req/min/key => {pool.capacity_per_minute:g} req/min total"
+    )
 
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out_root = Path(args.out) / stamp
     out_root.mkdir(parents=True, exist_ok=True)
 
@@ -263,10 +329,12 @@ async def run(args: argparse.Namespace) -> int:
     key = await pool.acquire()
     try:
         catalogue = await asyncio.to_thread(client.list_models, key)
-    except Exception as exc:  # noqa: BLE001 - catalogue failure must be reported, not raised
+    except Exception as exc:
         print(f"catalogue request failed: {type(exc).__name__}: {exc}")
         return 2
-    (out_root / "models.json").write_text(json.dumps(catalogue, ensure_ascii=False, indent=1), encoding="utf-8")
+    (out_root / "models.json").write_text(
+        json.dumps(catalogue, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
     ids = [str(m.get("id")) for m in catalogue if m.get("id")]
     print(f"catalogue: {len(ids)} model(s)")
 
@@ -287,9 +355,11 @@ async def run(args: argparse.Namespace) -> int:
 
     banned = load_banned()
     lexicon = load_lexicon()
-    print(f"targets: {len(targets)} model(s) x {len(PROBES)} probe(s) = "
-          f"{len(targets) * len(PROBES)} request(s); banned patterns: {len(banned)}, "
-          f"lexicon terms: {len(lexicon)}")
+    print(
+        f"targets: {len(targets)} model(s) x {len(PROBES)} probe(s) = "
+        f"{len(targets) * len(PROBES)} request(s); banned patterns: {len(banned)}, "
+        f"lexicon terms: {len(lexicon)}"
+    )
 
     sem = asyncio.Semaphore(max(1, args.concurrency))
     banned_hits: dict[tuple[str, str], int] = {}
@@ -298,10 +368,15 @@ async def run(args: argparse.Namespace) -> int:
     async def guarded(model: str) -> list[ProbeRow]:
         async with sem:
             rows = await probe_model(
-                client, pool, model,
-                max_attempts=args.max_attempts, timeout=args.timeout,
+                client,
+                pool,
+                model,
+                max_attempts=args.max_attempts,
+                timeout=args.timeout,
                 forbidden_retries=args.forbidden_retries,
-                banned=banned, lexicon=lexicon, out_dir=out_root / "outputs",
+                banned=banned,
+                lexicon=lexicon,
+                out_dir=out_root / "outputs",
             )
             ok = sum(1 for r in rows if r.ok)
             print(f"  {model:<45} {ok}/{len(rows)} ok")
@@ -317,7 +392,9 @@ async def run(args: argparse.Namespace) -> int:
             fh.write(json.dumps(r.as_dict(), ensure_ascii=False) + "\n")
             for reason in r.gate_reasons:
                 if reason.startswith("banned:"):
-                    banned_hits[(r.model, r.probe)] = banned_hits.get((r.model, r.probe), 0) + 1
+                    banned_hits[(r.model, r.probe)] = (
+                        banned_hits.get((r.model, r.probe), 0) + 1
+                    )
 
     summaries = summarise(rows, banned_hits)
     ranked, dead = rank(summaries)
@@ -334,27 +411,47 @@ async def run(args: argparse.Namespace) -> int:
         "ranked": [s.as_dict() for s in ranked],
         "unavailable": [s.as_dict() for s in dead],
     }
-    (out_root / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
-    (out_root / "ranking.md").write_text(to_markdown(ranked, dead, probe_count=len(PROBES)), encoding="utf-8")
+    (out_root / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    (out_root / "ranking.md").write_text(
+        to_markdown(ranked, dead, probe_count=len(PROBES)), encoding="utf-8"
+    )
 
     print()
     print(to_markdown(ranked, dead, probe_count=len(PROBES)))
-    print(f"answered {summary['requests_answered']}/{summary['requests_attempted']} in {elapsed:.1f}s")
+    print(
+        f"answered {summary['requests_answered']}/{summary['requests_attempted']} in {elapsed:.1f}s"
+    )
     print(f"artefacts: {out_root}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--env-file", default=str(ROOT / ".env"))
-    ap.add_argument("--models", default="", help="comma-separated model ids; overrides catalogue filtering")
-    ap.add_argument("--limit", type=int, default=0, help="probe at most N catalogue models")
+    ap.add_argument(
+        "--models",
+        default="",
+        help="comma-separated model ids; overrides catalogue filtering",
+    )
+    ap.add_argument(
+        "--limit", type=int, default=0, help="probe at most N catalogue models"
+    )
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--max-attempts", type=int, default=3)
-    ap.add_argument("--forbidden-retries", type=int, default=1,
-                    help="retries after a 403 'authorization failed' (observed to be intermittent)")
+    ap.add_argument(
+        "--forbidden-retries",
+        type=int,
+        default=1,
+        help="retries after a 403 'authorization failed' (observed to be intermittent)",
+    )
     ap.add_argument("--timeout", type=float, default=120.0)
-    ap.add_argument("--rpm", type=float, default=60.0, help="requests/minute/key (default 60)")
+    ap.add_argument(
+        "--rpm", type=float, default=60.0, help="requests/minute/key (default 60)"
+    )
     ap.add_argument("--burst", type=int, default=1, help="immediate tokens per key")
     ap.add_argument("--out", default=str(ROOT / "artifacts" / "probes"))
     ap.add_argument("--dry-run", action="store_true", help="list probe targets and exit")

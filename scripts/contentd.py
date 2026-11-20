@@ -31,9 +31,11 @@ Usage
     python scripts/contentd.py logs --tail 40
     python scripts/contentd.py start --units 40 --workers 2 --foreground   # smoke test
 """
+
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import signal
@@ -82,7 +84,9 @@ class Service:
     def write(self) -> None:
         STATUS.parent.mkdir(parents=True, exist_ok=True)
         tmp = STATUS.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(self), ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.write_text(
+            json.dumps(asdict(self), ensure_ascii=False, indent=1), encoding="utf-8"
+        )
         tmp.replace(STATUS)
 
 
@@ -103,14 +107,22 @@ def _worker_cmd(args: argparse.Namespace, index: int, run_dir: Path) -> list[str
     cmd = [
         sys.executable if not args.python else args.python,
         str(ROOT / "scripts" / "generate_content.py"),
-        "--count", str(args.units),
-        "--workers", str(args.workers),
-        "--worker-index", str(index),
-        "--concurrency", str(args.concurrency),
-        "--max-attempts", str(args.max_attempts),
-        "--request-timeout", str(args.request_timeout),
-        "--seed", str(args.seed),
-        "--out", str(run_dir),
+        "--count",
+        str(args.units),
+        "--workers",
+        str(args.workers),
+        "--worker-index",
+        str(index),
+        "--concurrency",
+        str(args.concurrency),
+        "--max-attempts",
+        str(args.max_attempts),
+        "--request-timeout",
+        str(args.request_timeout),
+        "--seed",
+        str(args.seed),
+        "--out",
+        str(run_dir),
     ]
     if args.rpm:
         cmd += ["--rpm", str(args.rpm)]
@@ -135,9 +147,13 @@ def _spawn(cmd: list[str], log_path: Path) -> subprocess.Popen[bytes]:
     log = log_path.open("ab")
     env = dict(os.environ)
     env.setdefault("PYTHONUNBUFFERED", "1")
-    return subprocess.Popen(  # noqa: S603 - fixed argv, no shell
-        cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(ROOT),
-        env=env, start_new_session=True,
+    return subprocess.Popen(
+        cmd,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        cwd=str(ROOT),
+        env=env,
+        start_new_session=True,
     )
 
 
@@ -147,8 +163,9 @@ def supervise(args: argparse.Namespace) -> int:
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     STOPFILE.unlink(missing_ok=True)
 
-    svc = Service(run_dir=str(run_dir.relative_to(ROOT)), units=args.units,
-                  workers=args.workers)
+    svc = Service(
+        run_dir=str(run_dir.relative_to(ROOT)), units=args.units, workers=args.workers
+    )
     svc.workers_state = [
         Worker(index=i, log=str((run_dir / "logs" / f"w{i}.log").relative_to(ROOT)))
         for i in range(args.workers)
@@ -165,10 +182,8 @@ def supervise(args: argparse.Namespace) -> int:
         svc.write()
         for w in svc.workers_state:
             if w.pid:
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     os.killpg(w.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
 
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
@@ -200,7 +215,11 @@ def supervise(args: argparse.Namespace) -> int:
                     procs.pop(w.index, None)
                     continue
                 # non-zero: restart unless we are stopping or out of restarts
-                if stopping["flag"] or STOPFILE.exists() or w.restarts >= args.max_restarts:
+                if (
+                    stopping["flag"]
+                    or STOPFILE.exists()
+                    or w.restarts >= args.max_restarts
+                ):
                     w.state = "stopped" if stopping["flag"] else "failed"
                     procs.pop(w.index, None)
                     continue
@@ -231,7 +250,9 @@ def supervise(args: argparse.Namespace) -> int:
         for w in svc.workers_state:
             if w.state == "running":
                 w.state = "stopped"
-        svc.state = "done" if all(w.state == "done" for w in svc.workers_state) else "stopped"
+        svc.state = (
+            "done" if all(w.state == "done" for w in svc.workers_state) else "stopped"
+        )
         svc.updated_at = _now()
         if svc.state == "done":
             svc.note = svc.note or "all workers finished"
@@ -264,7 +285,9 @@ def _status() -> int:
         return 1
     data = json.loads(STATUS.read_text(encoding="utf-8"))
     pid = _pid()
-    print(f"state      : {data['state']}" + ("" if pid else "   (supervisor not running)"))
+    print(
+        f"state      : {data['state']}" + ("" if pid else "   (supervisor not running)")
+    )
     print(f"run dir    : {data['run_dir']}")
     print(f"units      : {data['units']} over {data['workers']} worker(s)")
     print(f"started    : {data['started_at']}   updated: {data['updated_at']}")
@@ -273,16 +296,19 @@ def _status() -> int:
     print(f"accepted   : {acc}   rejected: {rej}")
     for w in data["workers_state"]:
         exit_txt = "" if w.get("exit_code") is None else f"  exit {w['exit_code']}"
-        print(f"  w{w['index']}  {w['state']:<9} pid {str(w['pid']):<8} "
-              f"restarts {w['restarts']}  ok {w['accepted']}  rej {w['rejected']}{exit_txt}")
+        print(
+            f"  w{w['index']}  {w['state']:<9} pid {w['pid']!s:<8} "
+            f"restarts {w['restarts']}  ok {w['accepted']}  rej {w['rejected']}{exit_txt}"
+        )
     if data.get("note"):
         print(f"note       : {data['note']}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("action", choices=["start", "status", "stop", "logs", "foreground"])
     ap.add_argument("--units", type=int, default=1500)
     ap.add_argument("--workers", type=int, default=2)
@@ -322,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"--- {w['log']} ---")
             p = ROOT / w["log"]
             if p.is_file():
-                print("\n".join(p.read_text(encoding="utf-8").splitlines()[-args.tail:]))
+                print("\n".join(p.read_text(encoding="utf-8").splitlines()[-args.tail :]))
         return 0
 
     if _pid() is not None:
@@ -335,13 +361,21 @@ def main(argv: list[str] | None = None) -> int:
             log.parent.mkdir(parents=True, exist_ok=True)
             # the detached copy runs the same command with the action renamed, so it
             # inherits every flag without a second parsing path
-            argv2 = [("foreground" if a == "start" else a) for a in (argv or sys.argv[1:])]
+            argv2 = [
+                ("foreground" if a == "start" else a) for a in (argv or sys.argv[1:])
+            ]
             with log.open("ab") as fh:
-                subprocess.Popen(  # noqa: S603
-                    [sys.executable if not args.python else args.python,
-                     str(Path(__file__).resolve()), *argv2],
-                    stdout=fh, stderr=subprocess.STDOUT, cwd=str(ROOT),
-                    start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                subprocess.Popen(
+                    [
+                        sys.executable if not args.python else args.python,
+                        str(Path(__file__).resolve()),
+                        *argv2,
+                    ],
+                    stdout=fh,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(ROOT),
+                    start_new_session=True,
+                    env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 )
             time.sleep(1.5)
             print(f"started detached; log {log.relative_to(ROOT)}")

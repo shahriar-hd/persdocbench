@@ -61,6 +61,8 @@ user: |
   سیاست عددی: {numeric_policy_fa}
   سبک رقم: {digit_style_fa}
   زاویهٔ این نمونه: {angle_fa}
+  {figure_line}
+  {table_line}
 
   واژگانی که توقع می‌رود در متن دیده شود (به‌صورت طبیعی، نه فهرست‌وار):
   {lexicon_hint}
@@ -69,6 +71,22 @@ user: |
   {banned_hint}
 
   خروجی فقط متن سند است و با نخستین جملهٔ محتوایی آغاز می‌شود.
+
+# D37 hook: shown only when the planner gave this unit an image slot. The
+# content stays pure text; [FIG: ...] is a renderer placeholder.
+figure_instruction: >-
+  این صفحه باید یک تصویر مرتبط با موضوع داشته باشد (نمودار، شکل فنی یا نقشه).
+  محل تصویر را در متن با برچسب [FIG: شرح یکخطی تصویر] مشخص کنید و زیر آن یک
+  کپشن کامل بیاورید؛ جای تصویر را خالی نگذارید.
+
+# Table hook: shown only for domains whose register contract expects at least
+# one table (tables_expected >= 1). Rows must be markdown-style `| ... |`
+# lines so the renderer rebuilds a real table; R5 body-word counts exclude rows.
+table_instruction: >-
+  این سند باید دستکم یک جدول داشته باشد. جدول را با ردیفهای آغازشونده با |
+  بنویسید: ردیف نخست سرستونها و ردیفهای بعدی سطرها. سرتیتر و شمارهٔ جدول
+  خارج از ردیفهای | میآیند. بدنهٔ متن (بدون ردیفهای جدول) همچنان باید
+  محدودهٔ واژهٔ خواستهشده را داشته باشد.
 
 # Rotation set. One angle per unit, chosen by the unit's seeded index, so 1,600 units
 # are not 1,600 paraphrases of one instruction. Each angle is a *concrete* situation a
@@ -207,6 +225,57 @@ domain_labels:
       procedure_steps: "گام‌های دستور کار"
       warnings: "هشدارها"
       troubleshooting: "عیب‌یابی"
+  medical_record:
+    fa: "پروندهٔ پزشکی"
+    element_labels:
+      patient_block: "مشخصات بیمار"
+      history_notes: "سابقه و شرح حال"
+      lab_values: "نتایج آزمایشگاهی"
+      medications: "داروها و دوز"
+      discharge_instructions: "دستورهای ترخیص"
+  court_judgment:
+    fa: "رای دادگاه"
+    element_labels:
+      case_header: "شماره پرونده و دادگاه"
+      parties: "طرفین"
+      facts: "گردش کار"
+      reasoning: "دلایل و مستندات"
+      ruling: "منطوق رای"
+  magazine_article:            # user feedback 2026-11-19
+    fa: "مجله"
+    element_labels:
+      cover_headline: "تیتر و معرفی روی جلد"
+      byline: "شناسنامهٔ نویسنده"
+      feature_body: "متن اصلی گزارش"
+      pull_quote: "نقلقول برجسته"
+      sidebar: "ستون کناری"
+      contents_list: "فهرست مطالب"
+  poster:                        # user feedback 2026-11-19 (D43)
+    fa: "پوستر"
+    element_labels:
+      headline: "تیتر اصلی پوستر"
+      subheadline: "زیرتیتر"
+      body_copy: "متن بدنه"
+      call_to_action: "فراخوان اقدام"
+      event_details: "جزئیات رویداد"
+      fine_print: "متن ریز"
+  website:                       # user feedback 2026-11-19 (D43)
+    fa: "وبسایت"
+    element_labels:
+      nav_header: "نوار پیمایش"
+      hero_section: "بخش آغازین"
+      feature_blocks: "بلوکهای ویژگی"
+      product_details: "جزئیات محصول یا خدمت"
+      faq: "پرسشهای پرتکرار"
+      footer: "پابرگ"
+  manga:                         # user feedback 2026-11-19 (D43): text-in-image comic
+    fa: "مانگا"
+    element_labels:
+      page_title: "عنوان صفحه"
+      panel_sequence: "توالی پنلها"
+      dialogue_bubbles: "حبابهای گفتگو"
+      narration_boxes: "جعبههای روایت"
+      sound_effects: "افکتهای صوتی"
 
 numeric_policy_phrasing:
   heavy: "عدد و واحد در بیشتر بندها بیاید (حداقل یک کمیت با واحد در هر ۸۰ واژه)."
@@ -221,3 +290,5 @@ subject_field_labels:
   education_social: "علوم تربیتی و اجتماعی"
   literature_culture: "ادبیات و فرهنگ"
   general_administration: "اداری و سازمانی"
+  computer_science: "رایانش و نرمافزار"
+  agriculture_environment: "کشاورزی و محیطزیست"

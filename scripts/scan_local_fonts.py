@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 try:  # optional; the scan degrades gracefully without PyYAML
     import yaml
@@ -41,11 +41,43 @@ DEFAULT_OUT = REPO / "artifacts" / "fonts" / "local_fonts.json"
 # fonts_v1.yaml with a licence-file sha behind it.
 FREE_FOUNDRY_HINTS = ("GOOG", "ALIF", "PfEd", "UKWN")
 FREE_FAMILY_HINTS = (
-    "vazir", "sahel", "samim", "shabnam", "tanha", "gandom", "nahid", "parastoo",
-    "estedad", "fandogh", "noqte", "daftar", "pfont", "behdad", "nika", "iranian",
-    "ganjnameh", "farbod", "shahab", "noon", "erfan", "amiri", "noto", "scheherazade",
-    "lateef", "harmattan", "lalezar", "markazi", "mirza", "rakkas", "gulzar", "vibes",
-    "dejavu", "dastkhat", "mikhak", "ronevis", "evilfont",
+    "vazir",
+    "sahel",
+    "samim",
+    "shabnam",
+    "tanha",
+    "gandom",
+    "nahid",
+    "parastoo",
+    "estedad",
+    "fandogh",
+    "noqte",
+    "daftar",
+    "pfont",
+    "behdad",
+    "nika",
+    "iranian",
+    "ganjnameh",
+    "farbod",
+    "shahab",
+    "noon",
+    "erfan",
+    "amiri",
+    "noto",
+    "scheherazade",
+    "lateef",
+    "harmattan",
+    "lalezar",
+    "markazi",
+    "mirza",
+    "rakkas",
+    "gulzar",
+    "vibes",
+    "dejavu",
+    "dastkhat",
+    "mikhak",
+    "ronevis",
+    "evilfont",
 )
 PROPRIETARY_HINTS = ("IRANSans", "IRANYekan", "B Nazanin", "B Zar", "Yekan Bakh", "Dana")
 
@@ -63,8 +95,18 @@ def parse_fc_list_output(text: str) -> list[str]:
 
 def base_family(name: str) -> str:
     """`Sahel Black` and `Sahel` are one family; weights are not separate families."""
-    for suffix in (" Black", " ExtraBold", " Bold", " SemiBold", " Medium", " Regular",
-                   " Light", " ExtraLight", " Thin", "FaNum"):
+    for suffix in (
+        " Black",
+        " ExtraBold",
+        " Bold",
+        " SemiBold",
+        " Medium",
+        " Regular",
+        " Light",
+        " ExtraLight",
+        " Thin",
+        "FaNum",
+    ):
         if name.endswith(suffix):
             return name[: -len(suffix)].strip()
     return name
@@ -110,11 +152,17 @@ def inventory_names(cfg: dict[str, Any]) -> tuple[list[str], list[str]]:
     verified: list[str] = []
     for group in (cfg.get("families") or {}).values():
         for entry in group or []:
-            if entry.get("name") and entry.get("licence") != "unverified" \
-                    and "excluded" not in str(entry.get("status", "")):
+            if (
+                entry.get("name")
+                and entry.get("licence") != "unverified"
+                and "excluded" not in str(entry.get("status", ""))
+            ):
                 verified.append(str(entry["name"]))
-    pending = [str(e["name"]) for e in (cfg.get("pending_licence_verification") or [])
-               if e.get("name")]
+    pending = [
+        str(e["name"])
+        for e in (cfg.get("pending_licence_verification") or [])
+        if e.get("name")
+    ]
     for group in (cfg.get("families") or {}).values():
         for entry in group or []:
             if entry.get("name") and (
@@ -167,13 +215,20 @@ def main(argv: list[str] | None = None) -> int:
         else:
             row["names"].append(fam)
     report = {
-        "scanned_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "scanned_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "host_font_files": total,
         "persian_capable_family_names": len(families),
         "persian_capable_families": len({r["base_family"] for r in rows}),
-        "by_class": {c: sum(1 for r in rows if r["class"] == c) for c in (
-            "verified_inventory", "free_hint", "proprietary_hint", "pending_licence",
-            "unknown")},
+        "by_class": {
+            c: sum(1 for r in rows if r["class"] == c)
+            for c in (
+                "verified_inventory",
+                "free_hint",
+                "proprietary_hint",
+                "pending_licence",
+                "unknown",
+            )
+        },
         "font_dirs": font_dirs(),
         "inventory_size": len(inv),
         "pending_inventory_size": len(pending),
@@ -184,15 +239,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    args.out.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
 
     print(f"font files installed      : {total}")
-    print(f"Persian-capable families  : {report['persian_capable_families']} "
-          f"({len(families)} names)")
+    print(
+        f"Persian-capable families  : {report['persian_capable_families']} "
+        f"({len(families)} names)"
+    )
     for cls, n in report["by_class"].items():
         print(f"  {cls:<20}: {n}")
     print(f"report                    : {args.out.relative_to(REPO)}")
