@@ -58,7 +58,15 @@ class ModelForbidden(Fatal):
     same key), so quarantining it would kill a batch for a bad model id. Observed
     shapes on the NVIDIA endpoint: ``403: authorization failed`` and
     ``404: function '<uuid>': not found for account '<id>'``.
+
+    ``key_level_suspicion`` tells the dispatcher that this shape is *also* what a
+    revoked key returns, so one occurrence must not kill the request but a
+    repeated one across different models must retire the key (2026-11-20: one of
+    four keys was revoked and, because this was a plain Fatal, every unit routed
+    to it died — 26 units lost in an 8-unit smoke run).
     """
+
+    key_level_suspicion = True
 
 
 class ModelUnsupported(Fatal):

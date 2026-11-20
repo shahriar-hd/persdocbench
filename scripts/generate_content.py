@@ -51,6 +51,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from persdocbench.content.blocks import decode as decode_blocks  # noqa: E402
 from persdocbench.content.dispatcher import Dispatcher, Request, Response  # noqa: E402
 from persdocbench.content.dotenv import load_dotenv  # noqa: E402
 from persdocbench.content.gates import (  # noqa: E402
@@ -228,7 +229,9 @@ def partition(units: list[Unit], *, workers: int, index: int) -> list[Unit]:
 # --------------------------------------------------------------------------
 # prompt
 # --------------------------------------------------------------------------
-def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[str, str]:
+def build_prompt(
+    unit: Unit, reg: dict[str, Any], prm: dict[str, Any], *, json_mode: bool = True
+) -> tuple[str, str]:
     """Return (system, user) for one unit. No randomness: same unit, same prompt."""
     domain = reg["domains"][unit.domain]
     dlabel = prm["domain_labels"][unit.domain]
@@ -239,7 +242,8 @@ def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[
         reg["banned_patterns"].get("definition_copulas_fa", [])
     )
     elements = "، ".join(
-        dlabel["element_labels"].get(e, e) for e in domain["required_elements"]
+        f"{dlabel['element_labels'].get(e, e)} (role: {e})"
+        for e in domain["required_elements"]
     )
     angle = next(a["fa"] for a in prm["angles"] if a["id"] == unit.angle)
     length = prm["length"]
@@ -253,6 +257,7 @@ def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[
     table_line = (
         prm.get("table_instruction", "") if domain.get("tables_expected", 0) else ""
     )
+    json_line = prm.get("json_instruction", "") if json_mode else ""
     user = prm["user"].format(
         domain_fa=dlabel["fa"],
         subject_field_fa=sf_label,
@@ -270,8 +275,20 @@ def build_prompt(unit: Unit, reg: dict[str, Any], prm: dict[str, Any]) -> tuple[
         table_line=table_line,
         lexicon_hint="، ".join(lex) if lex else "—",
         banned_hint="؛ ".join(banned[:14]),
+        json_instruction=json_line,
     )
     return system, user
+
+
+def role_labels(
+    domain_id: str, reg: dict[str, Any], prm: dict[str, Any]
+) -> dict[str, str]:
+    """Element labels to strip if the model echoes them: our scaffolding, not content."""
+    dlabel = prm["domain_labels"].get(domain_id, {})
+    labels: dict[str, str] = {}
+    for element in reg["domains"][domain_id]["required_elements"]:
+        labels[element] = dlabel.get("element_labels", {}).get(element, element)
+    return labels
 
 
 # --------------------------------------------------------------------------
@@ -341,6 +358,7 @@ async def dispatch(
     resume: bool,
     request_timeout: float = 180.0,
     rpm_override: float | None = None,
+    json_mode: bool = True,
 ) -> dict[str, object]:
     pool = KeyPool.from_env(
         gen["provider"]["key_env"],
@@ -365,7 +383,7 @@ async def dispatch(
     )
 
     def make(unit: Unit, model: str) -> Request:
-        system, user = build_prompt(unit, reg, prm)
+        system, user = build_prompt(unit, reg, prm, json_mode=json_mode)
         return Request(
             prompt=user,
             model=model,
@@ -379,6 +397,20 @@ async def dispatch(
             variant=unit.unit_id,
             meta={**unit.meta(), "system_sha256": text_sha256(system)},
         )
+
+    def decode_answer(raw: str, req: Request) -> tuple[str, dict[str, Any] | None]:
+        """Raw provider answer -> (text for the gates, structured record).
+
+        Malformed JSON is model-shaped: blocks.decode raises, the dispatcher
+        retries, and if it keeps failing the unit falls through to the next
+        candidate model. It must never land in rejects.jsonl, which calibrates the
+        *content* gates.
+        """
+        if not json_mode:
+            return raw, None
+        labels = role_labels(str(req.meta["domain"]), reg, prm)
+        payload, text = decode_blocks(raw, labels)
+        return text, payload
 
     def on_reject(req: Request, resp: Response, report: Any) -> None:
         """Rejected text is evidence, not noise: calibration of the hard gates
@@ -421,6 +453,20 @@ async def dispatch(
                 "image_slot": req.meta["image_slot"],
                 "text": resp.text,
                 "text_sha256": text_sha256(resp.text),
+                "blocks": (resp.payload or {}).get("blocks", []),
+                "has_table": bool((resp.payload or {}).get("has_table")),
+                "has_figure": bool((resp.payload or {}).get("has_figure")),
+                "label_echo_stripped": (resp.payload or {}).get(
+                    "label_echo_stripped", []
+                ),
+                "markup_fields_stripped": int(
+                    (resp.payload or {}).get("markup_fields_stripped") or 0
+                ),
+                "json_repaired": bool((resp.payload or {}).get("json_repaired")),
+                "label_prefix_suspect": (resp.payload or {}).get(
+                    "label_prefix_suspect", []
+                ),
+                "output_format": "json" if resp.payload else "text",
                 "words": wc,
                 "gate": report.as_dict(),
                 "usage": resp.usage,
@@ -451,6 +497,7 @@ async def dispatch(
             client,
             ledger,
             pool,
+            decode=decode_answer,
             concurrency=concurrency,
             max_attempts=max_attempts,
             backoff_base=float(gen["dispatch"]["backoff_base"]),
@@ -618,6 +665,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--worker-index", type=int, default=0, help="0-based index of this worker"
     )
+    ap.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="json",
+        help="provider output format (default json: D46). text = legacy free prose",
+    )
     ap.add_argument("--dry-run", action="store_true", help="write the plan, send nothing")
     args = ap.parse_args(argv)
 
@@ -732,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
             resume=args.resume,
             request_timeout=args.request_timeout,
             rpm_override=args.rpm,
+            json_mode=args.format == "json",
         )
     )
 
@@ -753,6 +807,7 @@ def main(argv: list[str] | None = None) -> int:
         "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "config_sha256": _config_hashes(),
         "seed": args.seed,
+        "output_format": args.format,
         "units_planned": len(units),
         "workers": args.workers,
         "worker_index": args.worker_index,

@@ -53,7 +53,10 @@ generation:
   prompt_template: configs/content/prompts_v1.yaml   # written at Gate 3 start
   temperature: 0.8
   top_p: 0.95
-  max_tokens: 1400
+  # D46: JSON answers wrap the same prose in block structure, table header/rows
+  # and figure captions, so the old 1400 truncated the tail (finish_reason=length
+  # on 4 smoke requests). 2200 leaves room for a 430-word body plus structure.
+  max_tokens: 2200
   n_per_prompt: 1
   # Variation control: the same (domain, subject_field, register) cell must not
   # produce near-duplicate pages; dedup runs before acceptance, not after.

@@ -124,6 +124,7 @@ def _worker_cmd(args: argparse.Namespace, index: int, run_dir: Path) -> list[str
         "--out",
         str(run_dir),
     ]
+    cmd += ["--format", args.format]
     if args.rpm:
         cmd += ["--rpm", str(args.rpm)]
     if args.resume:
@@ -320,6 +321,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--poll-seconds", type=float, default=15.0)
     ap.add_argument("--rpm", type=float, default=None)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="json",
+        help="provider output format forwarded to generate_content (D46: json)",
+    )
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--python", default=None)
     ap.add_argument("--domain", action="append")

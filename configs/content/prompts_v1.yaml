@@ -71,7 +71,37 @@ user: |
   {banned_hint}
 
   خروجی فقط متن سند است و با نخستین جملهٔ محتوایی آغاز می‌شود.
+  {json_instruction}
 
+# D46 (user, 2026-11-20): the provider must answer with JSON, not free prose.
+# Two defects forced this: table-native domains (invoice, form, medical record)
+# rendered with no table at all because "|" rows never came back, and for posters
+# and manga the model echoed our own element labels as literal text, so a page
+# showed "تیتر اصلی پوستر: ...". In JSON the element identity is the block "role"
+# and "text" holds content only, so a label can never reach a rendered page.
+# "role" values are the element ids from register_v1.yaml (headline, dialogue_bubbles, ...).
+json_instruction: |
+  قالب خروجی — الزامی: تنها یک شیء JSON برگردانید و هیچ متنی بیرون از آن ننویسید.
+  ساختار:
+  {
+    "title": "<عنوان سند>",
+    "subtitle": "<زیرعنوان، اگر بخش‌های خواسته‌شده زیرعنوان دارند>",
+    "blocks": [ ... ]
+  }
+  هر عضو blocks یکی از این شکل‌هاست و "type" آن الزامی است:
+  - {"type": "heading", "role": "<نام بخش>", "text": "<سرتیتر>"}
+  - {"type": "paragraph", "role": "<نام بخش>", "text": "<یک پاراگراف کامل>"}
+  - {"type": "list", "role": "<نام بخش>", "items": ["<مورد>", ...]}
+  - {"type": "table", "role": "<نام بخش>", "caption": "<شماره و عنوان جدول>",
+     "header": ["<سرستون>", ...], "rows": [["<خانه>", ...], ...]}
+  - {"type": "figure", "role": "figure", "caption": "<شرح کامل تصویر>"}
+  - {"type": "field", "role": "<نام بخش>", "label": "<نام فیلد>", "value": "<مقدار>"}
+  قواعد قطعی این قالب:
+  ۱. «role» شناسهٔ انگلیسی بخش است؛ همان «role: ...» که در فهرست بخش‌های خواسته‌شده آمده. «role» هرگز در «text» یا «value» تکرار نمی‌شود.
+  ۲. «text» فقط محتوای سند است؛ با نام بخش، برچسب، دو نقطهٔ آغازین یا شمارهٔ بخش شروع نمی‌شود.
+  ۳. هر جدول با کلیدهای "header" و "rows" می‌آید، نه به‌صورت متن با کاراکتر «|».
+  ۴. برای هر تصویر یک عضو از نوع "figure" با کپشن کامل بیاورید، نه نشانهٔ متنی.
+  ۵. هیچ کلید اضافه‌ای اضافه نکنید و شرحی بیرون از JSON ننویسید.
 # D37 hook: shown only when the planner gave this unit an image slot. The
 # content stays pure text; [FIG: ...] is a renderer placeholder.
 figure_instruction: >-

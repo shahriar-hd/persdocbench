@@ -23,7 +23,7 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -31,6 +31,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from persdocbench.content.blocks import flatten_markdown as blocks_to_markdown  # noqa: E402
 from persdocbench.content.markdown import (  # noqa: E402
     is_separator_row,
     is_table_row,
@@ -55,6 +56,7 @@ class Unit:
     image_slot: bool
     text: str
     words: int
+    blocks: list[dict] = field(default_factory=list)
 
 
 def load_records(run_dir: Path) -> list[Unit]:
@@ -85,6 +87,7 @@ def load_records(run_dir: Path) -> list[Unit]:
                 image_slot=bool(r.get("image_slot", False)),
                 text=str(r["text"]),
                 words=int(r.get("words", 0)),
+                blocks=list(r.get("blocks") or []),
             )
         )
     return out
@@ -133,8 +136,17 @@ def write_preview(unit: Unit, out_dir: Path) -> None:
     sf = PRM["subject_field_labels"].get(unit.subject_field, unit.subject_field)
     regf = PRM["register_phrasing"][unit.register]["register_fa"]
     te = REG["domains"].get(unit.domain, {}).get("tables_expected", 0)
-    body = clean_text(unit.text)
-    body = add_table_separators(body)
+    if unit.blocks:
+        # D46: structured answer. Markdown is generated from the blocks so tables
+        # are real tables and no element label can appear: the role is printed in
+        # the *reviewer's* metadata line only, never in the body.
+        body = blocks_to_markdown(unit.blocks)
+        roles = ", ".join(
+            f"{b.get('role') or b.get('type')}" for b in unit.blocks if b.get("role")
+        )
+    else:
+        body = add_table_separators(clean_text(unit.text))
+        roles = ""
     md = (
         f"# {dlabel} — {unit.unit_id}\n\n"
         f"| | |\n|---|---|\n"
@@ -142,6 +154,8 @@ def write_preview(unit: Unit, out_dir: Path) -> None:
         f"| سطح مخاطب | {regf} |\n"
         f"| تصویر در صفحه | {'بله (image slot)' if unit.image_slot else 'خیر'} |\n"
         f"| جدول مورد انتظار | {'بله' if te else 'خیر'} |\n"
+        f"| جدول در محتوا | {'بله' if any(b.get('type') == 'table' for b in unit.blocks) else ('خیر' if unit.blocks else 'n/v')} |\n"
+        f"| بخش‌های ساختاری | {roles or 'n/v'} |\n"
         f"| واژههای بدنه | {unit.words} |\n\n"
         f"---\n\n{body}\n"
     )

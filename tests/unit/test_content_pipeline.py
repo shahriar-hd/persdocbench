@@ -16,6 +16,7 @@ from persdocbench.content.dispatcher import (
     AuthError,
     Dispatcher,
     Fatal,
+    MalformedOutput,
     Request,
     Response,
     Retryable,
@@ -445,3 +446,98 @@ def test_body_text_strips_tables_and_headings() -> None:
     out = body_text(page)
     assert "|" not in out
     assert "شرایط پرداخت" in out
+
+
+# ---------------------------------------------------------------------------
+# D46 decode hook: a malformed answer is model-shaped, never a content rejection
+# ---------------------------------------------------------------------------
+def test_decode_hook_replaces_provider_text_for_the_gates(tmp_path) -> None:
+    ft = FakeTime()
+    pool = make_pool(["k"], ft, rpm=6000)
+    led = Ledger(tmp_path / "l.jsonl", fsync=False)
+    seen: list[str] = []
+
+    async def transport(req: Request, key) -> Response:
+        return Response('{"blocks": [{"type": "paragraph", "text": "متن سالم"}]}')
+
+    d = Dispatcher(
+        transport,
+        led,
+        pool,
+        concurrency=1,
+        decode=lambda raw, req: (SPECIALIST_TEXT, {"blocks": [], "has_table": False}),
+        on_ok=lambda req, resp, rep: seen.append(resp.text),
+    )
+    reqs = [Request(prompt="p", model="m")]
+    stats = run(d.run(reqs))
+    assert stats.ok == 1
+    assert seen == [SPECIALIST_TEXT]
+
+
+def test_malformed_json_is_a_failure_not_a_rejection(tmp_path) -> None:
+    ft = FakeTime()
+    pool = make_pool(["k"], ft, rpm=6000)
+    led = Ledger(tmp_path / "l.jsonl", fsync=False)
+
+    async def transport(req: Request, key) -> Response:
+        return Response("I am afraid I cannot do that")
+
+    def decode(raw: str, req: Request):
+        raise MalformedOutput("no JSON object in the answer")
+
+    d = Dispatcher(transport, led, pool, concurrency=1, max_attempts=2, decode=decode)
+    reqs = [Request(prompt="p", model="m")]
+    stats = run(d.run(reqs))
+    assert stats.failed == 1
+    assert stats.rejected == 0, "format failures must never calibrate the content gates"
+    assert led.status(reqs[0].id) == Status.FAILED
+    rec = led.get(reqs[0].id)
+    assert rec is not None and "malformed" in (rec.error or "")
+
+
+# ---------------------------------------------------------------------------
+# Ambiguous 403: revoked key vs model not entitled (2026-11-20)
+# ---------------------------------------------------------------------------
+class _EntitlementFatal(Fatal):
+    """Stands in for ModelForbidden: ambiguous '403 authorization failed'."""
+
+    key_level_suspicion = True
+
+
+def test_ambiguous_403_on_a_revoked_key_retires_it_and_saves_the_unit(tmp_path) -> None:
+    """A revoked key returned the same 403 as 'model not entitled'; units routed to
+    it were marked failed although three healthy keys were idle."""
+    ft = FakeTime()
+    pool = make_pool(["revoked", "live"], ft, rpm=6000)
+    dead = pool.keys[0]
+
+    async def transport(req: Request, key) -> Response:
+        if key.id == dead.id:
+            raise _EntitlementFatal("403: authorization failed")
+        return Response(SPECIALIST_TEXT, {"total_tokens": 10})
+
+    led = Ledger(tmp_path / "l.jsonl", fsync=False)
+    d = Dispatcher(transport, led, pool, concurrency=1, max_attempts=6)
+    reqs = [Request(prompt=f"p{i}", model="m1") for i in range(2)]
+    stats = run(d.run(reqs))
+    assert stats.ok == 2, "no unit may be lost to a revoked key"
+    assert dead.disabled is True
+    assert stats.quarantined_keys >= 1
+
+
+def test_model_entitlement_403_does_not_retire_a_working_key(tmp_path) -> None:
+    """Every key answers 403 for one restricted model: that is the model, not the keys."""
+    ft = FakeTime()
+    pool = make_pool(["k1", "k2"], ft, rpm=6000)
+
+    async def transport(req: Request, key) -> Response:
+        if req.model == "restricted":
+            raise _EntitlementFatal("403: authorization failed")
+        return Response(SPECIALIST_TEXT, {"total_tokens": 10})
+
+    led = Ledger(tmp_path / "l.jsonl", fsync=False)
+    d = Dispatcher(transport, led, pool, concurrency=1)
+    reqs = [Request(prompt=f"p{i}", model="restricted") for i in range(4)]
+    stats = run(d.run(reqs))
+    assert stats.failed == 4
+    assert all(not k.disabled for k in pool.keys), "a bad model id must not kill keys"

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 import subprocess
 import sys
 from collections import defaultdict
@@ -87,6 +88,94 @@ def figure_png(
     else:
         dr.text((w // 2, 12), "fig " + str(seed)[:6], fill=(30, 30, 30))
     img.save(out_path, "PNG")
+
+
+def blocks_to_html(blocks: list[dict], unit_id: str, fig_dir: Path) -> tuple[str, int]:
+    """Render structured blocks (D46) to HTML. Returns (html_body, figure_count).
+
+    The block "role" becomes a CSS class, never visible text: this is what keeps
+    our own element labels (تیتر اصلی پوستر، حباب‌های گفتگو، ...) off the page.
+    Tables keep their real header/rows, so a table-native document renders a table
+    instead of paragraphs. Gate-4 styling hooks onto the role classes.
+    """
+    out: list[str] = []
+    figs = 0
+
+    def role_cls(role: str) -> str:
+        safe = re.sub(r"[^a-z0-9_]+", "-", role.lower())
+        return f" role-{safe}" if safe else ""
+
+    for blk in blocks:
+        if not isinstance(blk, dict):
+            continue
+        btype = str(blk.get("type", ""))
+        role = str(blk.get("role", ""))
+        cls = role_cls(role)
+        text = escape(str(blk.get("text", "")))
+        if btype == "title" and text:
+            out.append(f'<h1 class="doc-title{cls}">{text}</h1>')
+        elif btype == "subtitle" and text:
+            out.append(f'<h2 class="doc-subtitle{cls}">{text}</h2>')
+        elif btype == "heading" and text:
+            out.append(f'<h3 class="block-heading{cls}">{text}</h3>')
+        elif btype == "paragraph" and text:
+            out.append(f'<p class="block-paragraph{cls}">{text}</p>')
+        elif btype == "list":
+            items = [escape(str(i)) for i in (blk.get("items") or []) if str(i).strip()]
+            if items:
+                out.append(
+                    f'<ul class="block-list{cls}">'
+                    + "".join(f"<li>{i}</li>" for i in items)
+                    + "</ul>"
+                )
+        elif btype == "table":
+            header = [escape(str(c)) for c in (blk.get("header") or [])]
+            rows = [
+                [escape(str(c)) for c in r]
+                for r in (blk.get("rows") or [])
+                if isinstance(r, list)
+            ]
+            caption = escape(str(blk.get("caption", "")))
+            html = [f'<div class="table-wrap{cls}">']
+            if caption:
+                html.append(f'<div class="table-caption">{caption}</div>')
+            html.append("<table>")
+            if header:
+                html.append(
+                    "<thead><tr>"
+                    + "".join(f"<th>{c}</th>" for c in header)
+                    + "</tr></thead>"
+                )
+            if rows:
+                html.append(
+                    "<tbody>"
+                    + "".join(
+                        "<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>"
+                        for r in rows
+                    )
+                    + "</tbody>"
+                )
+            html.append("</table></div>")
+            out.append("".join(html))
+        elif btype == "figure":
+            caption = str(blk.get("caption") or blk.get("text") or "")
+            fig_path = fig_dir / f"{unit_id}_f{figs}.png"
+            figure_png(caption, figs + 1, fig_path, font_file_path())
+            out.append(
+                f'<div class="figure{cls}"><img src="{fig_path.name}" '
+                f'alt="{escape(caption)}"/>'
+                f'<div class="figcaption">{escape(caption)}</div></div>'
+            )
+            figs += 1
+        elif btype == "field":
+            label = escape(str(blk.get("label", "")))
+            value = escape(str(blk.get("value", "")))
+            if label or value:
+                out.append(
+                    f'<div class="field-row{cls}"><span class="field-label">{label}</span>'
+                    f'<span class="field-value">{value}</span></div>'
+                )
+    return "\n".join(out), figs
 
 
 def text_to_html(text: str, unit_id: str, fig_dir: Path) -> tuple[str, int]:
@@ -220,6 +309,12 @@ def _render_pdf(
         f"<html><head><meta charset='utf-8'><style>"
         f"{_css(family, font_pt, margin_cm)}</style></head><body>{html}</body></html>"
     )
+    # The PDF text layer is a known-imperfect convenience artefact (see D53): WeasyPrint's
+    # font subsetting maps the lam-alef ligature to the reversed base pair, so extracted
+    # text reads «کاال» for «کالا». ``full_fonts=True`` fixes that but switches the whole
+    # layer to Arabic presentation forms (U+FExx) and multiplies PDF size by 5-30x, which
+    # is worse for the artefact that matters. The PNG is the image of record and ground
+    # truth always comes from the record JSON, never from this layer.
     return weasyprint.HTML(
         string=doc, base_url=str(base_url) if base_url else None
     ).write_pdf()
@@ -519,7 +614,11 @@ def main(argv: list[str] | None = None) -> int:
 
     rendered = []
     for rec in selected:
-        html, figs = text_to_html(str(rec["text"]), str(rec["unit_id"]), fig_dir)
+        blocks = rec.get("blocks") or []
+        if blocks:
+            html, figs = blocks_to_html(blocks, str(rec["unit_id"]), fig_dir)
+        else:
+            html, figs = text_to_html(str(rec["text"]), str(rec["unit_id"]), fig_dir)
         meta = render_one(
             rec,
             out_dir,

@@ -25,7 +25,7 @@ import asyncio
 import random
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 from persdocbench.content.gates import (
     GateReport,
@@ -57,6 +57,15 @@ class Fatal(Exception):
     """Transport failure not worth retrying with this key (400, policy refusal)."""
 
 
+class MalformedOutput(Fatal):
+    """The provider answered, but the answer is not a usable document.
+
+    Model-shaped, never content-shaped: the unit falls through to the next
+    candidate model. It must not be counted as a content rejection, which would
+    pollute the gate calibration with format failures.
+    """
+
+
 class AuthError(Fatal):
     """Key rejected (401/403). Retry the request on another key."""
 
@@ -84,6 +93,7 @@ class Request:
 class Response:
     text: str
     usage: dict[str, int] | None = None
+    payload: dict[str, Any] | None = None
 
 
 @dataclass
@@ -132,6 +142,7 @@ class Dispatcher:
         sentence_words_range: tuple[float, float] | None = None,
         on_ok: Callable[[Request, Response, GateReport], None] | None = None,
         on_reject: Callable[[Request, Response, GateReport], None] | None = None,
+        decode: Callable[[str, Request], tuple[str, dict[str, Any] | None]] | None = None,
     ) -> None:
         self.transport = transport
         self.ledger = ledger
@@ -150,6 +161,14 @@ class Dispatcher:
         self.sentence_words_range = sentence_words_range
         self.on_ok = on_ok
         self.on_reject = on_reject
+        self.decode = decode
+        # A 403 whose text is ambiguous between "key revoked" and "model not
+        # entitled" cannot be decided from one response. Track which models each
+        # key has failed on that way, and which models *some* key has served, so
+        # the decision is made from evidence instead of a guess.
+        self._entitlement_models: dict[str, set[str]] = {}
+        self._model_served: set[str] = set()
+        self._entitlement_tried: dict[str, set[str]] = {}
         self.stats = Stats()
 
     # -- single request ----------------------------------------------------
@@ -213,13 +232,54 @@ class Dispatcher:
                 continue
             except Fatal as exc:
                 self.pool.report_failure(key, str(exc))
+                if getattr(exc, "key_level_suspicion", False):
+                    if self._key_is_revoked(key, req.model) and not key.disabled:
+                        # Ambiguous 403 that another model did serve, or that this
+                        # key produced for two different models: the key is
+                        # revoked, not the model. Retire it.
+                        self.pool.quarantine(key, reason=f"revoked after: {exc}")
+                        self.stats.quarantined_keys += 1
+                    tried = self._entitlement_tried.setdefault(rid, set())
+                    tried.add(key.id)
+                    if any(not k.disabled and k.id not in tried for k in self.pool.keys):
+                        # Nothing was evaluated, so the attempt budget is untouched:
+                        # ask a key that has not answered this way yet. Bounded by
+                        # the key count, so this cannot loop.
+                        attempt = max(0, attempt - 1)
+                        continue
+                    # Every usable key answered identically: it is the model id.
                 self.stats.failed += 1
                 self.ledger.mark_failed(rid, attempts=attempt, error=f"fatal: {exc}")
                 return
 
             if self.budget is not None:
                 self.budget.charge(1, int((resp.usage or {}).get("total_tokens", 0)))
-            clean = normalize_for_storage(resp.text)
+            payload: dict[str, Any] | None = None
+            if self.decode is not None:
+                try:
+                    decoded_text, payload = self.decode(resp.text, req)
+                except MalformedOutput as exc:
+                    # A malformed answer is a model-shaped failure: try again,
+                    # and if it keeps failing let the unit fall through to the
+                    # next candidate model. Never a content rejection.
+                    self.stats.retries += 1
+                    self.pool.report_failure(key, f"malformed: {exc}")
+                    if attempt >= self.max_attempts:
+                        self.stats.failed += 1
+                        self.ledger.mark_failed(
+                            rid, attempts=attempt, error=f"malformed: {exc}"
+                        )
+                        return
+                    await self._sleep(
+                        min(
+                            self.backoff_cap,
+                            self.backoff_base**attempt + self._rng.random(),
+                        )
+                    )
+                    continue
+            else:
+                decoded_text = resp.text
+            clean = normalize_for_storage(decoded_text)
             report = evaluate(
                 clean,
                 banned=self.banned,
@@ -238,9 +298,10 @@ class Dispatcher:
                     extra={"gate": report.as_dict(), "meta": req.meta, "key": key.id},
                 )
                 if self.on_reject is not None:
-                    self.on_reject(req, Response(clean, resp.usage), report)
+                    self.on_reject(req, Response(clean, resp.usage, payload), report)
                 return
             self.stats.ok += 1
+            self._model_served.add(req.model)
             self.stats.gate_reports[rid] = report
             self.ledger.mark_ok(
                 rid,
@@ -250,8 +311,19 @@ class Dispatcher:
                 extra={"gate": report.as_dict(), "meta": req.meta, "key": key.id},
             )
             if self.on_ok is not None:
-                self.on_ok(req, Response(clean, resp.usage), report)
+                self.on_ok(req, Response(clean, resp.usage, payload), report)
             return
+
+    def _key_is_revoked(self, key: Key, model: str) -> bool:
+        """Decide whether an ambiguous entitlement-shaped 403 is a dead key.
+
+        Evidence, not guesswork: a revoked key fails for *every* model, so it is
+        retired once it has failed on two distinct models, or once it fails on a
+        model that another key has already served.
+        """
+        models = self._entitlement_models.setdefault(key.id, set())
+        models.add(model)
+        return len(models) >= 2 or model in self._model_served
 
     # -- batch -------------------------------------------------------------
     async def run(self, requests: Iterable[Request]) -> Stats:
